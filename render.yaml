@@ -65,7 +65,7 @@ services:
     region: oregon
     dockerfilePath: ./api_gateway/Dockerfile
     dockerContext: ./api_gateway
-    healthCheckPath: /health/
+    healthCheckPath: /api/health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -451,7 +451,6 @@ services:
   - type: worker
     name: legalflow-notification-worker
     runtime: docker
-    plan: free
     region: oregon
     dockerfilePath: ./notification_worker/Dockerfile
     dockerContext: ./notification_worker
