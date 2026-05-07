@@ -73,20 +73,10 @@ class HealthCheckView(APIView):
 
     Endpoints:
         GET /health/
-
-    Respuesta exitosa:
-        {
-            "service": "api_gateway",
-            "status": "healthy",
-            "services": {
-                "iam": {"status": "healthy"},
-                "matter": {"status": "healthy"},
-                ...
-            }
-        }
-
-    No requiere autenticacion.
     """
+    # Deshabilita autenticacion/permisos para health check
+    authentication_classes = []
+    permission_classes = []
 
     def get(self, request):
         """
@@ -149,6 +139,11 @@ class ProxyView(APIView):
         1. Establecer service_name al microservicio correspondiente
         2. Implementar metodos HTTP (get, post, put, patch, delete)
     """
+
+    # Deshabilita autenticacion de DRF (y por tanto CSRF de DRF)
+    # El gateway maneja su propia autenticacion JWT
+    authentication_classes = []
+    permission_classes = []
 
     # Nombre del microservicio destino (debe sobrescribirse en clases hijas)
     service_name = None
