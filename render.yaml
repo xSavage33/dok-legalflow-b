@@ -1,0 +1,564 @@
+# =============================================================================
+# RENDER.YAML - Configuracion de Infraestructura para LegalFlow
+# =============================================================================
+# Este archivo define todos los servicios, bases de datos y workers necesarios
+# para desplegar LegalFlow en Render.com
+#
+# Para desplegar: Conecta tu repositorio en Render Dashboard y selecciona
+# "Blueprint" para que Render lea este archivo automaticamente.
+# =============================================================================
+
+version: "1"
+
+# =============================================================================
+# BASES DE DATOS POSTGRESQL
+# =============================================================================
+databases:
+  # Base de datos para el servicio IAM (Identity and Access Management)
+  - name: legalflow-db-iam
+    plan: starter  # Plan gratuito para desarrollo, cambiar a 'standard' en produccion
+    databaseName: iam_db
+    user: iam_user
+    region: oregon  # Cambiar segun tu ubicacion preferida
+
+  # Base de datos para el servicio de Casos (Matter Service)
+  - name: legalflow-db-matter
+    plan: starter
+    databaseName: matter_db
+    user: matter_user
+    region: oregon
+
+  # Base de datos para el servicio de Documentos
+  - name: legalflow-db-document
+    plan: starter
+    databaseName: document_db
+    user: document_user
+    region: oregon
+
+  # Base de datos para el servicio de Control de Tiempo
+  - name: legalflow-db-time
+    plan: starter
+    databaseName: time_db
+    user: time_user
+    region: oregon
+
+  # Base de datos para el servicio de Facturacion
+  - name: legalflow-db-billing
+    plan: starter
+    databaseName: billing_db
+    user: billing_user
+    region: oregon
+
+  # Base de datos para el servicio de Calendario
+  - name: legalflow-db-calendar
+    plan: starter
+    databaseName: calendar_db
+    user: calendar_user
+    region: oregon
+
+  # Base de datos para el Portal del Cliente
+  - name: legalflow-db-portal
+    plan: starter
+    databaseName: portal_db
+    user: portal_user
+    region: oregon
+
+  # Base de datos para el servicio de Analytics
+  - name: legalflow-db-analytics
+    plan: starter
+    databaseName: analytics_db
+    user: analytics_user
+    region: oregon
+
+# =============================================================================
+# SERVICIOS WEB (MICROSERVICIOS)
+# =============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  # API GATEWAY - Punto de entrada unico para todas las peticiones
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-api-gateway
+    runtime: docker
+    plan: starter  # Cambiar a 'standard' en produccion
+    region: oregon
+    dockerfilePath: ./api_gateway/Dockerfile
+    dockerContext: ./api_gateway
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com,.legalflow.com"
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: MATTER_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-matter-service
+          property: host
+      - key: DOCUMENT_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-document-service
+          property: host
+      - key: TIME_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-time-service
+          property: host
+      - key: BILLING_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-billing-service
+          property: host
+      - key: CALENDAR_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-calendar-service
+          property: host
+      - key: PORTAL_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-portal-service
+          property: host
+      - key: ANALYTICS_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-analytics-service
+          property: host
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # IAM SERVICE - Autenticacion y Gestion de Usuarios
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-iam-service
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./iam_service/Dockerfile
+    dockerContext: ./iam_service
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false  # Se sincronizara manualmente con el gateway
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legalflow-db-iam
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # MATTER SERVICE - Gestion de Casos Legales
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-matter-service
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./matter_service/Dockerfile
+    dockerContext: ./matter_service
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legalflow-db-matter
+          property: connectionString
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # DOCUMENT SERVICE - Gestion de Documentos
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-document-service
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./document_service/Dockerfile
+    dockerContext: ./document_service
+    healthCheckPath: /api/health/
+    disk:
+      name: document-storage
+      mountPath: /app/media
+      sizeGB: 10  # Ajustar segun necesidad
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legalflow-db-document
+          property: connectionString
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # TIME TRACKING SERVICE - Control de Tiempo
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-time-service
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./time_tracking_service/Dockerfile
+    dockerContext: ./time_tracking_service
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legalflow-db-time
+          property: connectionString
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # BILLING SERVICE - Facturacion
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-billing-service
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./billing_service/Dockerfile
+    dockerContext: ./billing_service
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legalflow-db-billing
+          property: connectionString
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: TIME_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-time-service
+          property: host
+      - key: PORTAL_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-portal-service
+          property: host
+      - key: INTERNAL_SERVICE_TOKEN
+        generateValue: true
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # CALENDAR SERVICE - Calendario y Plazos
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-calendar-service
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./calendar_service/Dockerfile
+    dockerContext: ./calendar_service
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legalflow-db-calendar
+          property: connectionString
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # CLIENT PORTAL SERVICE - Portal del Cliente
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-portal-service
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./client_portal_service/Dockerfile
+    dockerContext: ./client_portal_service
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legalflow-db-portal
+          property: connectionString
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: MATTER_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-matter-service
+          property: host
+      - key: DOCUMENT_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-document-service
+          property: host
+      - key: BILLING_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-billing-service
+          property: host
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # ANALYTICS SERVICE - Reportes y KPIs
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: legalflow-analytics-service
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./analytics_service/Dockerfile
+    dockerContext: ./analytics_service
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legalflow-db-analytics
+          property: connectionString
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: MATTER_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-matter-service
+          property: host
+      - key: TIME_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-time-service
+          property: host
+      - key: BILLING_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-billing-service
+          property: host
+      - key: CALENDAR_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-calendar-service
+          property: host
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # NOTIFICATION WORKER - Worker de Celery para notificaciones
+  # ---------------------------------------------------------------------------
+  - type: worker
+    name: legalflow-notification-worker
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./notification_worker/Dockerfile
+    dockerContext: ./notification_worker
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: legalflow-redis
+          property: connectionString
+      - key: IAM_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-iam-service
+          property: host
+      - key: MATTER_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-matter-service
+          property: host
+      - key: CALENDAR_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-calendar-service
+          property: host
+      - key: BILLING_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-billing-service
+          property: host
+      - key: PORTAL_SERVICE_URL
+        fromService:
+          type: web
+          name: legalflow-portal-service
+          property: host
+      - key: EMAIL_HOST
+        value: "smtp.gmail.com"  # Cambiar segun tu proveedor
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_HOST_USER
+        sync: false  # Configurar manualmente en Render
+      - key: EMAIL_HOST_PASSWORD
+        sync: false  # Configurar manualmente en Render
+      - key: EMAIL_USE_TLS
+        value: "True"
+      - key: DEFAULT_FROM_EMAIL
+        value: "noreply@legalflow.com"
+
+  # ---------------------------------------------------------------------------
+  # REDIS - Cache y Broker de mensajes
+  # ---------------------------------------------------------------------------
+  - type: redis
+    name: legalflow-redis
+    plan: starter  # Cambiar a 'standard' en produccion
+    region: oregon
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Permitir solo desde servicios de Render
+
+# =============================================================================
+# NOTAS DE CONFIGURACION
+# =============================================================================
+#
+# 1. JWT_SECRET_KEY: Despues del primer despliegue, copia el valor generado
+#    del API Gateway y configuralo manualmente en todos los otros servicios
+#    para que compartan la misma clave.
+#
+# 2. INTERNAL_SERVICE_TOKEN: Similar al JWT_SECRET_KEY, copia del billing
+#    service al portal service.
+#
+# 3. EMAIL: Configura EMAIL_HOST_USER y EMAIL_HOST_PASSWORD manualmente
+#    en el dashboard de Render para el notification-worker.
+#
+# 4. CORS: Despues de desplegar, actualiza ALLOWED_HOSTS para incluir
+#    tu dominio personalizado cuando lo tengas.
+#
+# 5. PLAN: Cambia de 'starter' a 'standard' para produccion real.
+#    El plan starter tiene limitaciones de recursos y puede dormir
+#    despues de inactividad.
+# =============================================================================
