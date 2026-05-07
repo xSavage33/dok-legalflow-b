@@ -131,9 +131,9 @@ class ServiceClient:
         # Construye la URL completa concatenando base y path
         url = f"{base_url}{path}"
 
-        # Prepara headers limpios con Host valido para evitar errores DisallowedHost
-        # Docker usa nombres de servicio que Django no reconoce como hosts validos
-        forward_headers = {'Host': 'localhost'}
+        # Prepara headers limpios - NO establecer Host manualmente
+        # httpx establecera el Host correcto basado en la URL
+        forward_headers = {}
 
         # Copia headers proporcionados, excluyendo los que httpx maneja automaticamente
         if headers:
@@ -231,8 +231,9 @@ class ServiceClient:
         # Construye la URL completa concatenando base y path
         url = f"{base_url}{path}"
 
-        # Prepara headers limpios con Host valido para Docker
-        forward_headers = {'Host': 'localhost'}
+        # Prepara headers limpios - NO establecer Host manualmente
+        # httpx establecera el Host correcto basado en la URL
+        forward_headers = {}
 
         # Copia headers proporcionados con filtrado especial
         if headers:
