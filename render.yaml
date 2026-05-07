@@ -216,10 +216,10 @@ services:
     dockerfilePath: ./document_service/Dockerfile
     dockerContext: ./document_service
     healthCheckPath: /api/health/
-    disk:
-      name: document-storage
-      mountPath: /app/media
-      sizeGB: 10  # Ajustar segun necesidad
+    #disk:
+      #name: document-storage
+      #mountPath: /app/media
+      #sizeGB: 10  # Ajustar segun necesidad
     envVars:
       - key: DEBUG
         value: "False"
