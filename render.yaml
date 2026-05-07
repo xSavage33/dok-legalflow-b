@@ -65,7 +65,7 @@ services:
     region: oregon
     dockerfilePath: ./api_gateway/Dockerfile
     dockerContext: ./api_gateway
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -131,7 +131,7 @@ services:
     region: oregon
     dockerfilePath: ./iam_service/Dockerfile
     dockerContext: ./iam_service
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -161,7 +161,7 @@ services:
     region: oregon
     dockerfilePath: ./matter_service/Dockerfile
     dockerContext: ./matter_service
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -196,7 +196,7 @@ services:
     region: oregon
     dockerfilePath: ./document_service/Dockerfile
     dockerContext: ./document_service
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -231,7 +231,7 @@ services:
     region: oregon
     dockerfilePath: ./time_tracking_service/Dockerfile
     dockerContext: ./time_tracking_service
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -266,7 +266,7 @@ services:
     region: oregon
     dockerfilePath: ./billing_service/Dockerfile
     dockerContext: ./billing_service
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -313,7 +313,7 @@ services:
     region: oregon
     dockerfilePath: ./calendar_service/Dockerfile
     dockerContext: ./calendar_service
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -348,7 +348,7 @@ services:
     region: oregon
     dockerfilePath: ./client_portal_service/Dockerfile
     dockerContext: ./client_portal_service
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
@@ -400,7 +400,7 @@ services:
     region: oregon
     dockerfilePath: ./analytics_service/Dockerfile
     dockerContext: ./analytics_service
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DEBUG
         value: "False"
