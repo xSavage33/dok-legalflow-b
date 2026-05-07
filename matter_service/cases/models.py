@@ -65,6 +65,7 @@ class Case(models.Model):
         ('active', 'Activo'),       # Caso actualmente en tramite
         ('pending', 'Pendiente'),   # Caso en espera de accion
         ('on_hold', 'En Espera'),   # Caso temporalmente pausado
+        ('on_appeal', 'En Apelación'),  # Caso en proceso de apelacion
         ('closed', 'Cerrado'),      # Caso finalizado
         ('archived', 'Archivado'),  # Caso archivado (eliminacion logica)
     ]

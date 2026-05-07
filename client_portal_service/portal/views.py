@@ -387,37 +387,120 @@ class MyTimeEntriesView(APIView):
     """
     Vista de API para obtener los registros de tiempo de los casos del cliente.
 
-    Actualmente, esta vista retorna una lista vacia porque los registros de tiempo
-    son tipicamente informacion interna del bufete. Los clientes pueden ver
-    el tiempo facturado a traves de sus facturas.
+    Esta vista obtiene todos los registros de tiempo asociados a los casos
+    del cliente, permitiendo ver el trabajo realizado por el equipo legal.
+    Solo muestra entradas de tiempo ya facturadas o aprobadas.
 
     Metodos HTTP permitidos:
-        GET: Obtiene los registros de tiempo (actualmente vacio)
+        GET: Obtiene los registros de tiempo de los casos del cliente
 
-    Nota:
-        Esta funcionalidad podria expandirse en el futuro para mostrar
-        registros de tiempo aprobados o ya facturados.
+    Parametros de consulta:
+        - case_id: Filtrar por caso especifico (opcional)
+        - from_date: Fecha desde (YYYY-MM-DD, opcional)
+        - to_date: Fecha hasta (YYYY-MM-DD, opcional)
+
+    Autenticacion:
+        Requiere token JWT valido
     """
 
     def get(self, request):
         """
         Maneja las peticiones GET para obtener registros de tiempo.
 
-        Actualmente retorna una lista vacia con un mensaje informativo,
-        ya que los registros de tiempo son visibles a traves de las facturas.
+        Realiza las siguientes operaciones:
+        1. Obtiene todos los casos del cliente
+        2. Para cada caso, obtiene las entradas de tiempo del servicio de tiempo
+        3. Filtra solo entradas facturadas o aprobadas
+        4. Retorna el historial consolidado
 
         Args:
             request: Objeto HttpRequest con la informacion de la peticion
 
         Returns:
-            Response: Respuesta JSON con lista vacia y mensaje informativo
+            Response: Respuesta JSON con la lista de registros de tiempo
         """
-        # Esto necesitaria agregar registros de tiempo de todos los casos del cliente
-        # Por ahora, retornar vacio ya que los registros de tiempo son tipicamente internos
+        # Extraer el header de autorizacion
+        headers = {'Authorization': request.META.get('HTTP_AUTHORIZATION', '')}
+
+        # Obtener parametros de filtro opcionales
+        case_id_filter = request.query_params.get('case_id')
+        from_date = request.query_params.get('from_date')
+        to_date = request.query_params.get('to_date')
+
+        # Si se especifica un caso, verificar que pertenezca al cliente
+        if case_id_filter:
+            case_url = f"{settings.MATTER_SERVICE_URL}/api/cases/{case_id_filter}/"
+            case_data, case_status = proxy_get(case_url, headers)
+
+            if case_status == 404:
+                return Response({'error': 'Caso no encontrado'}, status=404)
+
+            if str(case_data.get('client_id')) != str(request.user.id):
+                return Response({'error': 'No autorizado'}, status=403)
+
+            case_ids = [case_id_filter]
+        else:
+            # Obtener todos los casos del cliente
+            cases_url = f"{settings.MATTER_SERVICE_URL}/api/cases/?client_id={request.user.id}"
+            cases_data, _ = proxy_get(cases_url, headers)
+
+            if not cases_data.get('results'):
+                return Response({
+                    'results': [],
+                    'count': 0,
+                    'total_hours': 0,
+                    'total_amount': 0
+                })
+
+            case_ids = [case['id'] for case in cases_data.get('results', [])]
+
+        # Lista para acumular todos los registros de tiempo
+        all_time_entries = []
+        total_hours = 0
+        total_amount = 0
+
+        # Obtener registros de tiempo de cada caso
+        for case_id in case_ids:
+            # Construir URL con filtros opcionales
+            time_url = f"{settings.TIME_SERVICE_URL}/api/time-entries/?case_id={case_id}"
+
+            # Agregar filtros de fecha si se especificaron
+            if from_date:
+                time_url += f"&date__gte={from_date}"
+            if to_date:
+                time_url += f"&date__lte={to_date}"
+
+            # Solo obtener entradas facturadas o aprobadas (no borradores)
+            time_url += "&status__in=billed,approved"
+
+            time_data, time_status = proxy_get(time_url, headers)
+
+            if time_status == 200 and time_data.get('results'):
+                entries = time_data['results']
+                all_time_entries.extend(entries)
+
+                # Calcular totales
+                for entry in entries:
+                    hours = float(entry.get('hours', 0))
+                    rate = float(entry.get('hourly_rate', 0))
+                    total_hours += hours
+                    total_amount += hours * rate
+
+        # Ordenar por fecha descendente (mas reciente primero)
+        all_time_entries.sort(key=lambda x: x.get('date', ''), reverse=True)
+
+        # Retornar el historial con totales
         return Response({
-            'results': [],
-            'count': 0,
-            'message': 'Time entries are visible in invoices'  # Los registros de tiempo son visibles en las facturas
+            'results': all_time_entries,
+            'count': len(all_time_entries),
+            'total_hours': round(total_hours, 2),
+            'total_amount': round(total_amount, 2),
+            'summary': {
+                'cases_count': len(case_ids),
+                'entries_count': len(all_time_entries),
+                'total_hours': round(total_hours, 2),
+                'total_amount': round(total_amount, 2)
+            }
         })
 
 

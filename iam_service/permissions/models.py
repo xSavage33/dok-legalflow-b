@@ -308,3 +308,174 @@ class ObjectPermission(models.Model):
             str: Descripcion del permiso de objeto
         """
         return f"User {self.user_id} - {self.permission.codename} on {self.object_type}:{self.object_id}"
+
+
+class FieldPermission(models.Model):
+    """
+    Modelo para permisos a nivel de campo.
+
+    Permite controlar el acceso a campos especificos de un modelo,
+    por ejemplo, permitir que ciertos roles vean el email pero no
+    el telefono de un usuario.
+
+    Atributos:
+        id (UUID): Identificador unico del permiso de campo
+        role (FK): Rol al que aplica el permiso
+        content_type (str): Tipo de objeto (ej: 'user', 'client')
+        field_name (str): Nombre del campo (ej: 'email', 'phone')
+        can_read (bool): Permiso de lectura del campo
+        can_write (bool): Permiso de escritura del campo
+        created_at (datetime): Fecha de creacion
+
+    Uso:
+        # Verificar si un rol puede leer el email de un usuario
+        can_read = FieldPermission.objects.filter(
+            role__name='paralegal',
+            content_type='user',
+            field_name='email',
+            can_read=True
+        ).exists()
+    """
+
+    # Opciones de tipos de contenido (modelos) que tienen campos protegidos
+    CONTENT_TYPE_CHOICES = [
+        ('user', 'Usuario'),
+        ('client', 'Cliente'),
+        ('case', 'Caso'),
+        ('invoice', 'Factura'),
+        ('document', 'Documento'),
+    ]
+
+    # Campos comunes que pueden ser protegidos
+    FIELD_CHOICES = [
+        # Campos de Usuario
+        ('email', 'Correo Electronico'),
+        ('phone', 'Telefono'),
+        ('address', 'Direccion'),
+        ('tax_id', 'Identificacion Fiscal'),
+        ('bank_account', 'Cuenta Bancaria'),
+        ('salary', 'Salario'),
+        # Campos de Cliente
+        ('contact_info', 'Informacion de Contacto'),
+        ('billing_info', 'Informacion de Facturacion'),
+        # Campos de Caso
+        ('sensitive_notes', 'Notas Sensibles'),
+        ('financial_details', 'Detalles Financieros'),
+    ]
+
+    # Identificador unico del permiso
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Rol al que aplica el permiso de campo
+    role = models.ForeignKey(
+        Role,
+        on_delete=models.CASCADE,
+        related_name='field_permissions'
+    )
+
+    # Tipo de objeto/modelo que contiene el campo
+    content_type = models.CharField(
+        max_length=50,
+        choices=CONTENT_TYPE_CHOICES
+    )
+
+    # Nombre del campo protegido
+    field_name = models.CharField(max_length=100)
+
+    # Permiso de lectura del campo
+    can_read = models.BooleanField(default=False)
+
+    # Permiso de escritura del campo
+    can_write = models.BooleanField(default=False)
+
+    # Fecha de creacion
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Fecha de actualizacion
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Configuracion del modelo FieldPermission."""
+        db_table = 'field_permissions'
+
+        # Un rol solo puede tener un permiso por cada campo de cada tipo
+        unique_together = ['role', 'content_type', 'field_name']
+
+        # Ordenamiento
+        ordering = ['content_type', 'field_name', 'role__name']
+
+    def __str__(self):
+        """Representacion en cadena del permiso de campo."""
+        perms = []
+        if self.can_read:
+            perms.append('read')
+        if self.can_write:
+            perms.append('write')
+        perm_str = '+'.join(perms) if perms else 'none'
+        return f"{self.role.name}: {self.content_type}.{self.field_name} ({perm_str})"
+
+    @classmethod
+    def check_field_permission(cls, role_name: str, content_type: str,
+                                field_name: str, action: str = 'read') -> bool:
+        """
+        Verifica si un rol tiene permiso sobre un campo.
+
+        Args:
+            role_name: Nombre del rol a verificar
+            content_type: Tipo de objeto (ej: 'user')
+            field_name: Nombre del campo (ej: 'email')
+            action: 'read' o 'write'
+
+        Returns:
+            bool: True si tiene permiso, False en caso contrario
+        """
+        try:
+            permission = cls.objects.get(
+                role__name=role_name,
+                content_type=content_type,
+                field_name=field_name
+            )
+            if action == 'read':
+                return permission.can_read
+            elif action == 'write':
+                return permission.can_write
+            return False
+        except cls.DoesNotExist:
+            # Si no hay permiso definido, permitir por defecto para admin
+            return role_name == 'admin'
+
+    @classmethod
+    def get_readable_fields(cls, role_name: str, content_type: str) -> list:
+        """
+        Obtiene la lista de campos que un rol puede leer.
+
+        Args:
+            role_name: Nombre del rol
+            content_type: Tipo de objeto
+
+        Returns:
+            list: Lista de nombres de campos con permiso de lectura
+        """
+        return list(cls.objects.filter(
+            role__name=role_name,
+            content_type=content_type,
+            can_read=True
+        ).values_list('field_name', flat=True))
+
+    @classmethod
+    def get_writable_fields(cls, role_name: str, content_type: str) -> list:
+        """
+        Obtiene la lista de campos que un rol puede escribir.
+
+        Args:
+            role_name: Nombre del rol
+            content_type: Tipo de objeto
+
+        Returns:
+            list: Lista de nombres de campos con permiso de escritura
+        """
+        return list(cls.objects.filter(
+            role__name=role_name,
+            content_type=content_type,
+            can_write=True
+        ).values_list('field_name', flat=True))

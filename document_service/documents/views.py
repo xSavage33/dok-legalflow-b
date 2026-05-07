@@ -20,8 +20,20 @@ Autor: Equipo de Desarrollo LegalFlow
 # Importacion del modulo hashlib para calcular checksums SHA-256
 import hashlib
 
+# Importacion de logging para registro de eventos
+import logging
+
 # Importacion de clases genericas de DRF para vistas basadas en clases
 from rest_framework import generics, status, filters
+
+# Importacion del cliente IAM para verificacion de permisos
+from .iam_client import check_document_permission, check_permission
+
+# Importacion del modulo de cifrado
+from .encryption import encrypt_file, decrypt_file, encrypt_file_stream
+
+# Logger para este modulo
+logger = logging.getLogger(__name__)
 
 # Importacion de la clase Response para enviar respuestas HTTP
 from rest_framework.response import Response
@@ -193,17 +205,62 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         Se ejecuta despues de que el serializador valida los datos
         pero antes de enviar la respuesta.
 
+        Incluye cifrado automatico del archivo antes de almacenarlo.
+
         Args:
             serializer: Serializador con datos validados
         """
-        # Guardar el documento y obtener la instancia creada
+        from django.core.files.base import ContentFile
+
+        # Guardar el documento inicialmente para obtener la instancia
         document = serializer.save()
 
-        # Calcular el checksum SHA-256 del archivo
-        document.checksum = calculate_checksum(document.file)
+        # Calcular el checksum SHA-256 del archivo original (antes de cifrar)
+        original_checksum = calculate_checksum(document.file)
 
-        # Guardar el documento con el checksum actualizado
-        document.save()
+        # Cifrar el archivo antes de almacenarlo
+        try:
+            # Leer el contenido del archivo
+            document.file.seek(0)
+            original_content = document.file.read()
+            original_size = len(original_content)
+
+            # Cifrar el contenido
+            encrypted_content, encryption_metadata = encrypt_file(original_content)
+
+            # Crear nuevo archivo con contenido cifrado
+            encrypted_file = ContentFile(
+                encrypted_content,
+                name=document.file.name
+            )
+
+            # Actualizar el documento con el archivo cifrado
+            document.file = encrypted_file
+            document.file_size = original_size  # Mantener tamano original para referencia
+            document.checksum = original_checksum  # Checksum del archivo original
+            document.encryption_status = 'at_rest'  # Marcar como cifrado en reposo
+
+            # Guardar metadatos de cifrado
+            if not document.metadata:
+                document.metadata = {}
+            document.metadata['encryption'] = {
+                'status': 'encrypted',
+                'algorithm': 'AES-256-GCM',
+                'original_size': original_size,
+                'encrypted_size': len(encrypted_content),
+                'metadata': encryption_metadata
+            }
+
+            document.save()
+
+            logger.info(f"Documento {document.id} cifrado exitosamente")
+
+        except Exception as e:
+            # Si falla el cifrado, guardar sin cifrar pero registrar el error
+            logger.error(f"Error al cifrar documento {document.id}: {str(e)}")
+            document.checksum = original_checksum
+            document.encryption_status = 'none'
+            document.save()
 
         # Crear la version inicial (version 1) en el historial de versiones
         # Esto permite que cuando se suban nuevas versiones, la original quede registrada
@@ -224,8 +281,20 @@ class DocumentListCreateView(generics.ListCreateAPIView):
             self.request.user,
             'upload',
             self.request,
-            {'original_filename': document.original_filename}  # Detalle adicional
+            {
+                'original_filename': document.original_filename,
+                'encrypted': document.encryption_status == 'at_rest'
+            }
         )
+
+        # Extraer texto del documento para busqueda full-text (en background)
+        # Esto indexa el contenido del documento para permitir busquedas
+        try:
+            document.extract_and_index_text()
+            logger.info(f"Texto extraido e indexado para documento {document.id}")
+        except Exception as e:
+            # No fallamos la creacion si la extraccion falla
+            logger.warning(f"No se pudo extraer texto de documento {document.id}: {str(e)}")
 
 
 class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -263,7 +332,8 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
         """
         Obtiene los detalles de un documento.
 
-        Sobrescribe el metodo base para agregar registro de auditoria.
+        Sobrescribe el metodo base para agregar registro de auditoria
+        y verificacion de permisos con IAM Service.
 
         Args:
             request: Solicitud HTTP
@@ -273,11 +343,16 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
         Returns:
             Response: Respuesta con datos del documento
         """
+        # Obtener el documento primero para verificar permisos
+        document = self.get_object()
+
+        # Verificar permisos con IAM Service
+        if not check_document_permission(request.user, document, 'view'):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("No tiene permiso para ver este documento")
+
         # Llamar al metodo retrieve() de la clase padre
         response = super().retrieve(request, *args, **kwargs)
-
-        # Obtener el documento para registrar el acceso
-        document = self.get_object()
 
         # Registrar la visualizacion en el log
         log_document_access(document, request.user, 'view', request)
@@ -335,11 +410,16 @@ class DocumentDownloadView(APIView):
 
     Permite descargar el archivo asociado a un documento,
     registrando la descarga en el log de auditoria.
+    Incluye verificacion de permisos con IAM Service y
+    descifrado automatico de archivos cifrados.
     """
 
     def get(self, request, id):
         """
         Maneja la solicitud GET para descargar un documento.
+
+        Verifica permisos con IAM Service, descifra el archivo
+        si esta cifrado, y registra la descarga en el log.
 
         Args:
             request: Solicitud HTTP
@@ -348,13 +428,46 @@ class DocumentDownloadView(APIView):
         Returns:
             FileResponse: Respuesta con el archivo para descarga
         """
+        from django.http import HttpResponse
+        from io import BytesIO
+
         # Obtener el documento o devolver 404 si no existe
         document = get_object_or_404(Document, id=id)
+
+        # Verificar permisos con IAM Service
+        if not check_document_permission(request.user, document, 'download'):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("No tiene permiso para descargar este documento")
 
         # Registrar la descarga en el log de auditoria
         log_document_access(document, request.user, 'download', request)
 
-        # Crear y devolver la respuesta de archivo
+        # Verificar si el documento esta cifrado
+        if document.encryption_status in ['at_rest', 'full']:
+            try:
+                # Leer el contenido cifrado
+                document.file.seek(0)
+                encrypted_content = document.file.read()
+
+                # Descifrar el contenido
+                decrypted_content = decrypt_file(encrypted_content)
+
+                # Crear respuesta con el contenido descifrado
+                response = HttpResponse(
+                    decrypted_content,
+                    content_type=document.mime_type or 'application/octet-stream'
+                )
+                response['Content-Disposition'] = f'attachment; filename="{document.original_filename}"'
+                response['Content-Length'] = len(decrypted_content)
+
+                return response
+
+            except Exception as e:
+                logger.error(f"Error al descifrar documento {id}: {str(e)}")
+                # Si falla el descifrado, intentar enviar el archivo normal
+                document.file.seek(0)
+
+        # Para archivos no cifrados, enviar directamente
         response = FileResponse(
             document.file,                    # Archivo a enviar
             as_attachment=True,               # Forzar descarga (no mostrar en navegador)
@@ -1149,3 +1262,337 @@ class VerifySignatureView(APIView):
                 'document_id': str(document.id),
                 'document_name': document.name
             }, status=status.HTTP_200_OK)
+
+
+# ========== Busqueda Full-Text de Documentos ==========
+
+class FullTextSearchView(APIView):
+    """
+    Vista para busqueda full-text en el contenido de documentos.
+
+    Utiliza la funcionalidad de busqueda full-text de PostgreSQL para
+    buscar texto dentro del contenido de los documentos, no solo en
+    los metadatos.
+
+    Caracteristicas:
+    - Busqueda en contenido extraido de PDF, Word, Excel, etc.
+    - Ranking de relevancia
+    - Resaltado de fragmentos coincidentes
+    - Soporte para operadores de busqueda (AND, OR, NOT)
+    """
+
+    def post(self, request):
+        """
+        Realiza una busqueda full-text en los documentos.
+
+        El cuerpo de la solicitud puede contener:
+        - query: Texto a buscar (requerido)
+        - search_type: Tipo de busqueda ('plain', 'phrase', 'websearch')
+        - case_id: ID del caso para filtrar (opcional)
+        - categories: Lista de categorias para filtrar (opcional)
+        - page: Numero de pagina (default: 1)
+        - page_size: Tamano de pagina (default: 20, max: 100)
+
+        Args:
+            request: Solicitud HTTP con criterios de busqueda
+
+        Returns:
+            Response: Lista de documentos con ranking y fragmentos coincidentes
+        """
+        from django.contrib.postgres.search import (
+            SearchQuery, SearchRank, SearchHeadline
+        )
+        from django.db.models import F
+
+        # Extraer parametros de busqueda
+        data = request.data
+        query_text = data.get('query', '').strip()
+
+        if not query_text:
+            return Response({
+                'error': 'Se requiere un texto de busqueda',
+                'results': [],
+                'total_count': 0
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Tipo de busqueda: 'plain', 'phrase', 'websearch'
+        search_type = data.get('search_type', 'websearch')
+
+        # Crear el objeto de busqueda con configuracion para espanol
+        if search_type == 'phrase':
+            search_query = SearchQuery(query_text, search_type='phrase', config='spanish')
+        elif search_type == 'websearch':
+            search_query = SearchQuery(query_text, search_type='websearch', config='spanish')
+        else:
+            search_query = SearchQuery(query_text, config='spanish')
+
+        # Iniciar queryset con documentos que tienen texto extraido
+        queryset = Document.objects.filter(text_extracted=True)
+
+        # Aplicar filtros adicionales
+        case_id = data.get('case_id')
+        if case_id:
+            queryset = queryset.filter(case_id=case_id)
+
+        categories = data.get('categories', [])
+        if categories:
+            queryset = queryset.filter(category__in=categories)
+
+        statuses = data.get('statuses', [])
+        if statuses:
+            queryset = queryset.filter(status__in=statuses)
+
+        # Aplicar busqueda full-text con ranking
+        queryset = queryset.filter(search_vector=search_query)
+        queryset = queryset.annotate(
+            rank=SearchRank(F('search_vector'), search_query)
+        ).order_by('-rank')
+
+        # Paginacion
+        page = int(data.get('page', 1))
+        page_size = min(int(data.get('page_size', 20)), 100)
+        offset = (page - 1) * page_size
+
+        # Contar total antes de paginar
+        total_count = queryset.count()
+
+        # Aplicar paginacion
+        documents = list(queryset[offset:offset + page_size])
+
+        # Preparar resultados con fragmentos resaltados
+        results = []
+        for doc in documents:
+            # Generar fragmento con texto resaltado
+            headline = ''
+            if doc.text_content:
+                try:
+                    # Obtener fragmento con coincidencias resaltadas
+                    from django.db import connection
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            SELECT ts_headline(
+                                'spanish',
+                                %s,
+                                websearch_to_tsquery('spanish', %s),
+                                'MaxWords=50, MinWords=20, StartSel=<mark>, StopSel=</mark>'
+                            )
+                        """, [doc.text_content[:5000], query_text])
+                        row = cursor.fetchone()
+                        if row:
+                            headline = row[0]
+                except Exception:
+                    # Si falla, usar un fragmento simple
+                    headline = doc.text_content[:200] + '...' if len(doc.text_content) > 200 else doc.text_content
+
+            results.append({
+                'id': str(doc.id),
+                'name': doc.name,
+                'description': doc.description,
+                'category': doc.category,
+                'category_display': doc.get_category_display(),
+                'status': doc.status,
+                'status_display': doc.get_status_display(),
+                'original_filename': doc.original_filename,
+                'file_size': doc.file_size,
+                'mime_type': doc.mime_type,
+                'case_id': str(doc.case_id) if doc.case_id else None,
+                'is_confidential': doc.is_confidential,
+                'is_privileged': doc.is_privileged,
+                'created_at': doc.created_at.isoformat(),
+                'created_by_name': doc.created_by_name,
+                'rank': doc.rank,
+                'headline': headline,
+            })
+
+        return Response({
+            'results': results,
+            'total_count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total_count + page_size - 1) // page_size if total_count > 0 else 0,
+            'query': query_text
+        })
+
+
+class ExtractTextView(APIView):
+    """
+    Vista para extraer texto de un documento manualmente.
+
+    Permite forzar la extraccion de texto de un documento especifico
+    para indexarlo en la busqueda full-text.
+    """
+
+    def post(self, request, id):
+        """
+        Extrae texto de un documento y actualiza el indice de busqueda.
+
+        Args:
+            request: Solicitud HTTP
+            id: UUID del documento
+
+        Returns:
+            Response: Resultado de la extraccion
+        """
+        # Obtener el documento
+        document = get_object_or_404(Document, id=id)
+
+        # Verificar permisos
+        if not check_permission(request.user, 'documents', 'update'):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("No tiene permiso para extraer texto de documentos")
+
+        # Extraer texto e indexar
+        try:
+            document.extract_and_index_text()
+
+            return Response({
+                'message': 'Texto extraido e indexado exitosamente',
+                'document_id': str(document.id),
+                'document_name': document.name,
+                'text_extracted': document.text_extracted,
+                'text_preview': document.text_content[:500] if document.text_content else None,
+                'text_length': len(document.text_content) if document.text_content else 0
+            })
+
+        except Exception as e:
+            logger.error(f"Error extrayendo texto de documento {id}: {str(e)}")
+            return Response({
+                'error': f'Error al extraer texto: {str(e)}',
+                'document_id': str(document.id)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class BulkExtractTextView(APIView):
+    """
+    Vista para extraer texto de multiples documentos.
+
+    Permite procesar todos los documentos que aun no tienen texto
+    extraido en un solo proceso batch.
+    """
+
+    def post(self, request):
+        """
+        Extrae texto de todos los documentos sin indexar.
+
+        Args:
+            request: Solicitud HTTP con opciones:
+                - limit: Numero maximo de documentos a procesar (default: 100)
+                - case_id: Filtrar por caso especifico
+
+        Returns:
+            Response: Resumen del procesamiento
+        """
+        # Verificar permisos
+        if not check_permission(request.user, 'documents', 'update'):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("No tiene permiso para procesar documentos")
+
+        data = request.data
+        limit = min(int(data.get('limit', 100)), 500)
+        case_id = data.get('case_id')
+
+        # Obtener documentos sin texto extraido
+        queryset = Document.objects.filter(text_extracted=False)
+
+        if case_id:
+            queryset = queryset.filter(case_id=case_id)
+
+        documents = list(queryset[:limit])
+
+        processed = 0
+        errors = 0
+        error_details = []
+
+        for doc in documents:
+            try:
+                doc.extract_and_index_text()
+                if doc.text_extracted:
+                    processed += 1
+            except Exception as e:
+                errors += 1
+                error_details.append({
+                    'document_id': str(doc.id),
+                    'document_name': doc.name,
+                    'error': str(e)
+                })
+
+        return Response({
+            'message': 'Procesamiento de extraccion completado',
+            'total_found': len(documents),
+            'processed_successfully': processed,
+            'errors': errors,
+            'error_details': error_details[:10] if error_details else []
+        })
+
+
+class ReindexSearchView(APIView):
+    """
+    Vista para reindexar los vectores de busqueda de documentos.
+
+    Util despues de actualizar nombres o descripciones de documentos
+    para reflejar los cambios en el indice de busqueda.
+    """
+
+    def post(self, request):
+        """
+        Reindexar vectores de busqueda.
+
+        Args:
+            request: Solicitud HTTP con opciones:
+                - document_id: Reindexar documento especifico
+                - case_id: Reindexar todos los documentos de un caso
+                - all: Reindexar todos los documentos (requiere admin)
+
+        Returns:
+            Response: Resumen del reindexado
+        """
+        from django.contrib.postgres.search import SearchVector
+
+        data = request.data
+        document_id = data.get('document_id')
+        case_id = data.get('case_id')
+        reindex_all = data.get('all', False)
+
+        if document_id:
+            # Reindexar documento especifico
+            document = get_object_or_404(Document, id=document_id)
+            document.update_search_vector()
+            return Response({
+                'message': 'Documento reindexado',
+                'document_id': str(document.id)
+            })
+
+        elif case_id:
+            # Reindexar documentos de un caso
+            count = Document.objects.filter(case_id=case_id).update(
+                search_vector=(
+                    SearchVector('name', weight='A') +
+                    SearchVector('description', weight='B') +
+                    SearchVector('text_content', weight='C')
+                )
+            )
+            return Response({
+                'message': f'{count} documentos reindexados',
+                'case_id': case_id
+            })
+
+        elif reindex_all:
+            # Reindexar todos los documentos (solo admin)
+            if not request.user.role == 'admin':
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Solo administradores pueden reindexar todos los documentos")
+
+            count = Document.objects.all().update(
+                search_vector=(
+                    SearchVector('name', weight='A') +
+                    SearchVector('description', weight='B') +
+                    SearchVector('text_content', weight='C')
+                )
+            )
+            return Response({
+                'message': f'{count} documentos reindexados'
+            })
+
+        return Response({
+            'error': 'Debe especificar document_id, case_id, o all=true'
+        }, status=status.HTTP_400_BAD_REQUEST)

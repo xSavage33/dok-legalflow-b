@@ -338,15 +338,23 @@ class SendInvoiceView(APIView):
         Procesa la solicitud de envio de factura.
 
         Cambia el estado de la factura de 'draft' a 'sent' si corresponde,
-        y envia un mensaje de notificacion al cliente.
+        envia el email con el PDF adjunto y notifica al cliente en el portal.
 
         Args:
             request: Objeto de solicitud HTTP
             id: UUID de la factura a enviar
 
+        Body opcional:
+            send_email (bool): Si enviar email (default: True)
+            cc_emails (list): Lista de emails en copia
+            custom_message (str): Mensaje personalizado
+
         Returns:
             Response: Mensaje de confirmacion o error
         """
+        # Importar el servicio de email
+        from .email_service import send_invoice_email
+
         try:
             # Intentar obtener la factura por su ID
             invoice = Invoice.objects.get(id=id)
@@ -357,6 +365,13 @@ class SendInvoiceView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        # Obtener opciones del body
+        send_email = request.data.get('send_email', True)
+        cc_emails = request.data.get('cc_emails', [])
+        custom_message = request.data.get('custom_message', '')
+
+        email_result = None
+
         # Solo cambiar estado si la factura esta en borrador
         if invoice.status == 'draft':
             # Actualizar estado a enviada
@@ -365,14 +380,27 @@ class SendInvoiceView(APIView):
             # Guardar cambios en la base de datos
             invoice.save()
 
-            # Enviar notificacion al cliente
+            # Enviar email con PDF si esta habilitado
+            if send_email and invoice.client_email:
+                email_result = send_invoice_email(
+                    invoice,
+                    cc_emails=cc_emails if cc_emails else None,
+                    custom_message=custom_message if custom_message else None
+                )
+
+            # Enviar notificacion al cliente en el portal
             self._send_client_notification(invoice)
 
         # Retornar mensaje de exito con el estado actual
-        return Response({
+        response_data = {
             'message': 'Factura enviada',
             'status': invoice.status
-        })
+        }
+
+        if email_result:
+            response_data['email'] = email_result
+
+        return Response(response_data)
 
     def _send_client_notification(self, invoice):
         """
@@ -1296,3 +1324,94 @@ class PaymentGatewayTransactionListView(generics.ListAPIView):
                 ]
 
         return TransactionSerializer
+
+
+# ============================================================================
+# VISTA DE EXPORTACION PDF
+# ============================================================================
+
+class InvoicePDFView(APIView):
+    """
+    Vista para generar y descargar una factura en formato PDF.
+
+    Esta vista genera un documento PDF profesional con toda la informacion
+    de la factura, incluyendo items, totales, pagos y notas.
+
+    Metodos:
+    - GET: Genera y descarga el PDF de la factura
+    """
+
+    def get(self, request, id):
+        """
+        Genera y descarga el PDF de una factura.
+
+        Args:
+            request: Objeto de solicitud HTTP
+            id: UUID de la factura
+
+        Returns:
+            HttpResponse: Respuesta HTTP con el archivo PDF
+        """
+        from .pdf_generator import generate_invoice_pdf_response
+
+        try:
+            # Obtener la factura
+            invoice = Invoice.objects.get(id=id)
+        except Invoice.DoesNotExist:
+            return Response(
+                {'error': 'Factura no encontrada'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Generar y retornar el PDF
+        return generate_invoice_pdf_response(invoice)
+
+
+class InvoicePDFPreviewView(APIView):
+    """
+    Vista para previsualizar una factura en PDF (inline en el navegador).
+
+    A diferencia de InvoicePDFView, esta vista muestra el PDF en el navegador
+    en lugar de forzar la descarga.
+
+    Metodos:
+    - GET: Genera y muestra el PDF de la factura en el navegador
+    """
+
+    def get(self, request, id):
+        """
+        Genera y muestra el PDF de una factura en el navegador.
+
+        Args:
+            request: Objeto de solicitud HTTP
+            id: UUID de la factura
+
+        Returns:
+            HttpResponse: Respuesta HTTP con el archivo PDF para visualizacion
+        """
+        from django.http import HttpResponse
+        from .pdf_generator import generate_invoice_pdf
+
+        try:
+            # Obtener la factura
+            invoice = Invoice.objects.get(id=id)
+        except Invoice.DoesNotExist:
+            return Response(
+                {'error': 'Factura no encontrada'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Generar el PDF
+        pdf_buffer = generate_invoice_pdf(invoice)
+
+        # Crear respuesta HTTP para visualizacion inline
+        response = HttpResponse(
+            pdf_buffer.getvalue(),
+            content_type='application/pdf'
+        )
+
+        # Usar inline en lugar de attachment para mostrar en navegador
+        filename = f"Factura_{invoice.invoice_number}.pdf"
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+
+        return response

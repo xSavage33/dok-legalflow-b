@@ -24,6 +24,10 @@ from django.db import models
 # Importacion de la configuracion de Django para acceder a variables de settings
 from django.conf import settings
 
+# Importacion de SearchVectorField para busqueda full-text en PostgreSQL
+from django.contrib.postgres.search import SearchVectorField
+from django.contrib.postgres.indexes import GinIndex
+
 
 def document_upload_path(instance, filename):
     """
@@ -208,6 +212,19 @@ class Document(models.Model):
     # Metadatos personalizados adicionales en formato JSON
     metadata = models.JSONField(default=dict, blank=True)
 
+    # ========== Busqueda Full-Text ==========
+
+    # Contenido de texto extraido del documento para busqueda
+    # Este campo almacena el texto plano extraido del contenido del archivo
+    text_content = models.TextField(blank=True, default='')
+
+    # Vector de busqueda de PostgreSQL para busqueda full-text eficiente
+    # Este campo es indexado con GIN para busquedas rapidas
+    search_vector = SearchVectorField(null=True, blank=True)
+
+    # Indica si el texto ya fue extraido del documento
+    text_extracted = models.BooleanField(default=False)
+
     # ========== Campos de auditoria ==========
 
     # ID del usuario que creo el documento
@@ -247,6 +264,7 @@ class Document(models.Model):
             models.Index(fields=['category']),       # Busquedas por categoria
             models.Index(fields=['status']),         # Busquedas por estado
             models.Index(fields=['created_by_id']),  # Busquedas por creador
+            GinIndex(fields=['search_vector']),      # Indice GIN para busqueda full-text
         ]
 
     def __str__(self):
@@ -289,6 +307,61 @@ class Document(models.Model):
 
         # Llamar al metodo save() de la clase padre para guardar en la BD
         super().save(*args, **kwargs)
+
+    def extract_and_index_text(self):
+        """
+        Extrae el texto del documento y actualiza el vector de busqueda.
+
+        Esta funcion debe llamarse despues de guardar el documento para
+        extraer el contenido de texto e indexarlo para busqueda full-text.
+        """
+        from .text_extraction import extract_text
+        from django.contrib.postgres.search import SearchVector
+
+        try:
+            # Leer el contenido del archivo
+            self.file.seek(0)
+            file_content = self.file.read()
+            self.file.seek(0)
+
+            # Extraer texto del archivo
+            text = extract_text(file_content, self.mime_type, self.original_filename)
+
+            if text:
+                self.text_content = text
+                self.text_extracted = True
+                self.save(update_fields=['text_content', 'text_extracted'])
+
+                # Actualizar el vector de busqueda usando SQL directo
+                # Esto combina nombre, descripcion y contenido con diferentes pesos
+                Document.objects.filter(pk=self.pk).update(
+                    search_vector=(
+                        SearchVector('name', weight='A') +
+                        SearchVector('description', weight='B') +
+                        SearchVector('text_content', weight='C')
+                    )
+                )
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error extrayendo texto de documento {self.id}: {str(e)}")
+
+    def update_search_vector(self):
+        """
+        Actualiza solo el vector de busqueda sin re-extraer el texto.
+
+        Util cuando se modifica el nombre o descripcion del documento.
+        """
+        from django.contrib.postgres.search import SearchVector
+
+        Document.objects.filter(pk=self.pk).update(
+            search_vector=(
+                SearchVector('name', weight='A') +
+                SearchVector('description', weight='B') +
+                SearchVector('text_content', weight='C')
+            )
+        )
 
 
 class DocumentVersion(models.Model):

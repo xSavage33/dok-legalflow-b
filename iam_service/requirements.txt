@@ -18,5 +18,8 @@ drf-spectacular>=0.27,<1.0
 # Security
 python-dotenv>=1.0,<2.0
 
+# Encryption (for sensitive field encryption)
+cryptography>=41.0,<42.0
+
 # WSGI Server
 gunicorn>=21.2,<22.0

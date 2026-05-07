@@ -88,6 +88,24 @@ urlpatterns = [
         name='send_invoice'
     ),
 
+    # Endpoint para descargar una factura en formato PDF
+    # GET: Genera y descarga el PDF de la factura
+    # Ejemplo: GET /api/billing/invoices/550e8400-e29b-41d4-a716-446655440000/pdf/
+    path(
+        'invoices/<uuid:id>/pdf/',
+        views.InvoicePDFView.as_view(),
+        name='invoice_pdf'
+    ),
+
+    # Endpoint para previsualizar una factura en formato PDF (inline)
+    # GET: Muestra el PDF de la factura en el navegador
+    # Ejemplo: GET /api/billing/invoices/550e8400-e29b-41d4-a716-446655440000/pdf/preview/
+    path(
+        'invoices/<uuid:id>/pdf/preview/',
+        views.InvoicePDFPreviewView.as_view(),
+        name='invoice_pdf_preview'
+    ),
+
     # ========================================================================
     # ENDPOINTS DE ITEMS DE FACTURA (INVOICE ITEMS)
     # ========================================================================

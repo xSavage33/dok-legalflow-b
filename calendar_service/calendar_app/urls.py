@@ -213,4 +213,57 @@ urlpatterns = [
         views.CheckBusinessDayView.as_view(),
         name='check_business_day'
     ),
+
+    # ============================================================================
+    # RUTAS DE NOTIFICACIONES (Notifications)
+    # Endpoints internos para procesamiento de notificaciones automaticas
+    # ============================================================================
+
+    # Ruta para procesar recordatorios de eventos
+    # POST: Procesa y envia recordatorios de eventos proximos
+    # Uso: Llamado por un cron job o tarea programada
+    # URL: /api/calendar/notifications/process-events/
+    path(
+        'notifications/process-events/',
+        views.ProcessEventRemindersView.as_view(),
+        name='process_event_reminders'
+    ),
+
+    # Ruta para procesar recordatorios de plazos
+    # POST: Procesa y envia recordatorios de plazos proximos/vencidos
+    # Uso: Llamado por un cron job o tarea programada
+    # URL: /api/calendar/notifications/process-deadlines/
+    path(
+        'notifications/process-deadlines/',
+        views.ProcessDeadlineRemindersView.as_view(),
+        name='process_deadline_reminders'
+    ),
+
+    # Ruta para verificar y actualizar plazos vencidos
+    # POST: Actualiza el estado de plazos vencidos
+    # Uso: Llamado diariamente para mantener estados actualizados
+    # URL: /api/calendar/notifications/check-overdue/
+    path(
+        'notifications/check-overdue/',
+        views.CheckOverdueDeadlinesView.as_view(),
+        name='check_overdue_deadlines'
+    ),
+
+    # Ruta para enviar notificacion manual de evento
+    # POST: Envia notificacion de un evento especifico
+    # URL: /api/calendar/events/<uuid:id>/notify/
+    path(
+        'events/<uuid:id>/notify/',
+        views.SendEventNotificationView.as_view(),
+        name='send_event_notification'
+    ),
+
+    # Ruta para enviar notificacion manual de plazo
+    # POST: Envia notificacion de un plazo especifico
+    # URL: /api/calendar/deadlines/<uuid:id>/notify/
+    path(
+        'deadlines/<uuid:id>/notify/',
+        views.SendDeadlineNotificationView.as_view(),
+        name='send_deadline_notification'
+    ),
 ]

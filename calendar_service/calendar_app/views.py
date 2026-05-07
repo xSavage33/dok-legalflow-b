@@ -680,3 +680,218 @@ class CheckBusinessDayView(APIView):
             'is_holiday': is_holiday,              # Es festivo?
             'is_weekend': check_date.weekday() >= 5,  # Es fin de semana?
         })
+
+
+# ============================================================================
+# VISTAS DE NOTIFICACIONES
+# Endpoints para procesamiento y envio de notificaciones automaticas
+# ============================================================================
+
+class ProcessEventRemindersView(APIView):
+    """
+    Vista para procesar recordatorios de eventos
+
+    Esta vista procesa y envia recordatorios para eventos proximos
+    a todos los asistentes configurados.
+
+    Endpoint: POST /notifications/process-events/
+
+    Uso: Llamado periodicamente por un cron job o tarea programada
+    cada 5-15 minutos para enviar recordatorios oportunos.
+    """
+
+    def post(self, request):
+        """
+        Procesa y envia recordatorios de eventos proximos
+
+        Returns:
+            Response: Resumen del procesamiento
+        """
+        from .notifications import process_event_reminders
+
+        results = process_event_reminders()
+
+        return Response({
+            'message': 'Recordatorios de eventos procesados',
+            'events_processed': results.get('events_processed', 0),
+            'notifications_sent': results.get('notifications_sent', 0),
+            'errors': results.get('errors', [])
+        })
+
+
+class ProcessDeadlineRemindersView(APIView):
+    """
+    Vista para procesar recordatorios de plazos
+
+    Esta vista procesa y envia recordatorios para plazos
+    proximos a vencer o ya vencidos.
+
+    Endpoint: POST /notifications/process-deadlines/
+
+    Uso: Llamado diariamente por un cron job para enviar
+    alertas de plazos a los usuarios asignados.
+    """
+
+    def post(self, request):
+        """
+        Procesa y envia recordatorios de plazos
+
+        Returns:
+            Response: Resumen del procesamiento
+        """
+        from .notifications import process_deadline_reminders
+
+        results = process_deadline_reminders()
+
+        return Response({
+            'message': 'Recordatorios de plazos procesados',
+            'deadlines_processed': results.get('deadlines_processed', 0),
+            'notifications_sent': results.get('notifications_sent', 0),
+            'errors': results.get('errors', [])
+        })
+
+
+class CheckOverdueDeadlinesView(APIView):
+    """
+    Vista para verificar y actualizar plazos vencidos
+
+    Esta vista verifica todos los plazos pendientes con fecha
+    de vencimiento pasada y actualiza su estado a 'missed'.
+
+    Endpoint: POST /notifications/check-overdue/
+
+    Uso: Llamado diariamente al inicio del dia para mantener
+    los estados de plazos actualizados.
+    """
+
+    def post(self, request):
+        """
+        Verifica y actualiza plazos vencidos
+
+        Returns:
+            Response: Resumen de la verificacion
+        """
+        from .notifications import check_and_update_overdue_deadlines
+
+        results = check_and_update_overdue_deadlines()
+
+        return Response({
+            'message': 'Verificacion de plazos vencidos completada',
+            'checked': results.get('checked', 0),
+            'updated_to_missed': results.get('updated_to_missed', 0),
+            'errors': results.get('errors', [])
+        })
+
+
+class SendEventNotificationView(APIView):
+    """
+    Vista para enviar notificacion manual de evento
+
+    Permite enviar una notificacion inmediata sobre un evento
+    especifico a todos sus asistentes.
+
+    Endpoint: POST /events/<uuid:id>/notify/
+    """
+
+    def post(self, request, id):
+        """
+        Envia notificacion de un evento especifico
+
+        Args:
+            request: Solicitud HTTP
+            id: UUID del evento
+
+        Returns:
+            Response: Resultado del envio
+        """
+        from .notifications import send_event_reminder
+
+        try:
+            event = Event.objects.get(id=id)
+        except Event.DoesNotExist:
+            return Response(
+                {'error': 'Evento no encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        notifications_sent = 0
+        errors = []
+
+        # Enviar notificacion a cada asistente
+        for attendee_id in event.attendees:
+            user_info = {
+                'id': attendee_id,
+                'name': 'Usuario',
+                'email': None
+            }
+            result = send_event_reminder(event, user_info)
+            if 'error' not in result:
+                notifications_sent += 1
+            else:
+                errors.append(result['error'])
+
+        return Response({
+            'message': 'Notificaciones enviadas',
+            'event_id': str(event.id),
+            'notifications_sent': notifications_sent,
+            'errors': errors
+        })
+
+
+class SendDeadlineNotificationView(APIView):
+    """
+    Vista para enviar notificacion manual de plazo
+
+    Permite enviar una notificacion inmediata sobre un plazo
+    especifico al usuario asignado.
+
+    Endpoint: POST /deadlines/<uuid:id>/notify/
+    """
+
+    def post(self, request, id):
+        """
+        Envia notificacion de un plazo especifico
+
+        Args:
+            request: Solicitud HTTP
+            id: UUID del plazo
+
+        Returns:
+            Response: Resultado del envio
+        """
+        from .notifications import send_deadline_reminder
+
+        try:
+            deadline = Deadline.objects.get(id=id)
+        except Deadline.DoesNotExist:
+            return Response(
+                {'error': 'Plazo no encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not deadline.assigned_to_id:
+            return Response(
+                {'error': 'El plazo no tiene usuario asignado'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user_info = {
+            'id': str(deadline.assigned_to_id),
+            'name': deadline.assigned_to_name or 'Usuario',
+            'email': None
+        }
+
+        is_overdue = deadline.is_overdue
+        result = send_deadline_reminder(deadline, user_info, is_overdue)
+
+        if 'error' in result:
+            return Response(
+                {'error': result['error']},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        return Response({
+            'message': 'Notificacion enviada',
+            'deadline_id': str(deadline.id),
+            'result': result
+        })

@@ -1,6 +1,8 @@
 """
 Modelos de autenticacion del servicio IAM.
 Define el modelo de Usuario personalizado y el registro de actividades.
+
+Incluye soporte para cifrado de campos sensibles (email, phone) usando AES-256-GCM.
 """
 
 # Importacion de UUID para generar identificadores unicos
@@ -11,6 +13,9 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 
 # Importacion del modulo de modelos de Django
 from django.db import models
+
+# Importacion de utilidades de cifrado
+from .encryption import encrypt_field, decrypt_field, hash_for_lookup
 
 
 class UserManager(BaseUserManager):
@@ -125,6 +130,25 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Telefono de contacto (opcional)
     phone = models.CharField(max_length=20, blank=True)
 
+    # ========================================================================
+    # CAMPOS CIFRADOS (para datos sensibles)
+    # Los campos originales (email, phone) se mantienen para compatibilidad
+    # Los campos cifrados almacenan la version encriptada
+    # Los campos hash permiten busquedas sin descifrar
+    # ========================================================================
+
+    # Email cifrado con AES-256-GCM
+    email_encrypted = models.TextField(blank=True, null=True)
+
+    # Hash del email para busquedas (SHA256)
+    email_hash = models.CharField(max_length=64, blank=True, db_index=True)
+
+    # Telefono cifrado con AES-256-GCM
+    phone_encrypted = models.TextField(blank=True, null=True)
+
+    # Hash del telefono para busquedas (SHA256)
+    phone_hash = models.CharField(max_length=64, blank=True, db_index=True)
+
     # Indica si el usuario puede iniciar sesion
     is_active = models.BooleanField(default=True)
 
@@ -170,6 +194,61 @@ class User(AbstractBaseUser, PermissionsMixin):
         Combina nombre y apellido.
         """
         return f"{self.first_name} {self.last_name}"
+
+    def save(self, *args, **kwargs):
+        """
+        Sobrescribe el metodo save para cifrar campos sensibles automaticamente.
+
+        Al guardar el usuario, los campos email y phone se cifran y se generan
+        los hashes correspondientes para permitir busquedas.
+        """
+        # Cifrar email si ha cambiado
+        if self.email:
+            self.email_encrypted = encrypt_field(self.email)
+            self.email_hash = hash_for_lookup(self.email)
+
+        # Cifrar telefono si existe
+        if self.phone:
+            self.phone_encrypted = encrypt_field(self.phone)
+            self.phone_hash = hash_for_lookup(self.phone)
+
+        super().save(*args, **kwargs)
+
+    def get_decrypted_email(self) -> str:
+        """
+        Obtiene el email descifrado.
+
+        Returns:
+            str: Email descifrado o el email original si no hay version cifrada
+        """
+        if self.email_encrypted:
+            return decrypt_field(self.email_encrypted)
+        return self.email
+
+    def get_decrypted_phone(self) -> str:
+        """
+        Obtiene el telefono descifrado.
+
+        Returns:
+            str: Telefono descifrado o el telefono original si no hay version cifrada
+        """
+        if self.phone_encrypted:
+            return decrypt_field(self.phone_encrypted)
+        return self.phone
+
+    @classmethod
+    def find_by_email_hash(cls, email: str):
+        """
+        Busca un usuario por email usando el hash (sin exponer el email real).
+
+        Args:
+            email: Email a buscar
+
+        Returns:
+            User: Usuario encontrado o None
+        """
+        email_hash = hash_for_lookup(email)
+        return cls.objects.filter(email_hash=email_hash).first()
 
     def get_permissions_list(self):
         """

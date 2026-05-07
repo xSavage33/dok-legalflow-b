@@ -211,6 +211,50 @@ urlpatterns = [
     ),
 
     # ========================================================================
+    # ENDPOINTS DE BUSQUEDA FULL-TEXT
+    # ========================================================================
+
+    # Endpoint: /documents/search/fulltext/
+    # Metodos HTTP: POST
+    # Busqueda full-text en el contenido de los documentos
+    # Busca dentro de PDFs, Word, Excel, etc.
+    # Soporta operadores de busqueda avanzados
+    path(
+        'documents/search/fulltext/',
+        views.FullTextSearchView.as_view(),
+        name='document_fulltext_search'
+    ),
+
+    # Endpoint: /documents/<uuid:id>/extract-text/
+    # Metodos HTTP: POST
+    # Extrae el texto de un documento especifico para indexarlo
+    path(
+        'documents/<uuid:id>/extract-text/',
+        views.ExtractTextView.as_view(),
+        name='document_extract_text'
+    ),
+
+    # Endpoint: /documents/extract-text/bulk/
+    # Metodos HTTP: POST
+    # Extrae texto de multiples documentos en batch
+    # Util para indexar documentos existentes
+    path(
+        'documents/extract-text/bulk/',
+        views.BulkExtractTextView.as_view(),
+        name='document_extract_text_bulk'
+    ),
+
+    # Endpoint: /documents/reindex/
+    # Metodos HTTP: POST
+    # Reindexar vectores de busqueda de documentos
+    # Util despues de cambios en metadatos
+    path(
+        'documents/reindex/',
+        views.ReindexSearchView.as_view(),
+        name='document_reindex'
+    ),
+
+    # ========================================================================
     # ENDPOINTS DE USUARIO
     # ========================================================================
 
