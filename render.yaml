@@ -16,56 +16,56 @@ version: "1"
 databases:
   # Base de datos para el servicio IAM (Identity and Access Management)
   - name: legalflow-db-iam
-    plan: free  # Plan gratuito para desarrollo, cambiar a 'standard' en produccion
+    plan: basic  # Plan gratuito para desarrollo, cambiar a 'standard' en produccion
     databaseName: iam_db
     user: iam_user
     region: oregon  # Cambiar segun tu ubicacion preferida
 
   # Base de datos para el servicio de Casos (Matter Service)
   - name: legalflow-db-matter
-    plan: free
+    plan: basic
     databaseName: matter_db
     user: matter_user
     region: oregon
 
   # Base de datos para el servicio de Documentos
   - name: legalflow-db-document
-    plan: free
+    plan: basic
     databaseName: document_db
     user: document_user
     region: oregon
 
   # Base de datos para el servicio de Control de Tiempo
   - name: legalflow-db-time
-    plan: free
+    plan: basic
     databaseName: time_db
     user: time_user
     region: oregon
 
   # Base de datos para el servicio de Facturacion
   - name: legalflow-db-billing
-    plan: free
+    plan: basic
     databaseName: billing_db
     user: billing_user
     region: oregon
 
   # Base de datos para el servicio de Calendario
   - name: legalflow-db-calendar
-    plan: free
+    plan: basic
     databaseName: calendar_db
     user: calendar_user
     region: oregon
 
   # Base de datos para el Portal del Cliente
   - name: legalflow-db-portal
-    plan: free
+    plan: basic
     databaseName: portal_db
     user: portal_user
     region: oregon
 
   # Base de datos para el servicio de Analytics
   - name: legalflow-db-analytics
-    plan: free
+    plan: basic
     databaseName: analytics_db
     user: analytics_user
     region: oregon
@@ -80,7 +80,7 @@ services:
   - type: web
     name: legalflow-api-gateway
     runtime: docker
-    plan: free  # Cambiar a 'standard' en produccion
+    plan: basic  # Cambiar a 'standard' en produccion
     region: oregon
     dockerfilePath: ./api_gateway/Dockerfile
     dockerContext: ./api_gateway
@@ -146,7 +146,7 @@ services:
   - type: web
     name: legalflow-iam-service
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./iam_service/Dockerfile
     dockerContext: ./iam_service
@@ -176,7 +176,7 @@ services:
   - type: web
     name: legalflow-matter-service
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./matter_service/Dockerfile
     dockerContext: ./matter_service
@@ -211,7 +211,7 @@ services:
   - type: web
     name: legalflow-document-service
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./document_service/Dockerfile
     dockerContext: ./document_service
@@ -250,7 +250,7 @@ services:
   - type: web
     name: legalflow-time-service
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./time_tracking_service/Dockerfile
     dockerContext: ./time_tracking_service
@@ -285,7 +285,7 @@ services:
   - type: web
     name: legalflow-billing-service
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./billing_service/Dockerfile
     dockerContext: ./billing_service
@@ -332,7 +332,7 @@ services:
   - type: web
     name: legalflow-calendar-service
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./calendar_service/Dockerfile
     dockerContext: ./calendar_service
@@ -367,7 +367,7 @@ services:
   - type: web
     name: legalflow-portal-service
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./client_portal_service/Dockerfile
     dockerContext: ./client_portal_service
@@ -419,7 +419,7 @@ services:
   - type: web
     name: legalflow-analytics-service
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./analytics_service/Dockerfile
     dockerContext: ./analytics_service
@@ -474,7 +474,7 @@ services:
   - type: worker
     name: legalflow-notification-worker
     runtime: docker
-    plan: free
+    plan: basic
     region: oregon
     dockerfilePath: ./notification_worker/Dockerfile
     dockerContext: ./notification_worker
@@ -536,7 +536,7 @@ services:
   # ---------------------------------------------------------------------------
   - type: redis
     name: legalflow-redis
-    plan: free  # Cambiar a 'standard' en produccion
+    plan: basic  # Cambiar a 'standard' en produccion
     region: oregon
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []  # Permitir solo desde servicios de Render
