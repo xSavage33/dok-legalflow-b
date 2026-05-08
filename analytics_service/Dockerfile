@@ -11,8 +11,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
 RUN python manage.py collectstatic --noinput || true
+
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 EXPOSE 8008
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8008", "--workers", "2", "analytics_service.wsgi:application"]
+CMD ["./entrypoint.sh"]

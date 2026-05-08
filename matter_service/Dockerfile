@@ -17,6 +17,9 @@ COPY . .
 
 RUN python manage.py collectstatic --noinput || true
 
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 EXPOSE 8002
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8002", "--workers", "2", "matter_service.wsgi:application"]
+CMD ["./entrypoint.sh"]
