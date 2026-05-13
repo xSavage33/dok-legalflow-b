@@ -128,6 +128,11 @@ class RateLimitMiddleware:
             HttpResponse: Respuesta de la vista si no excede limite,
                          JsonResponse con error 429 si excede el limite
         """
+        # Endpoints excluidos del rate limiting (monitoreo, health checks)
+        excluded_paths = ['/metrics', '/api/health/']
+        if any(request.path.startswith(path) for path in excluded_paths):
+            return self.get_response(request)
+
         # Solo aplica limitacion si Redis esta disponible
         if self.redis_client:
             # Obtiene la direccion IP real del cliente
