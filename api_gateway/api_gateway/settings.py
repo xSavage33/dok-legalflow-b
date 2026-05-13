@@ -100,12 +100,25 @@ _cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if _cors_origins:
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins.split(',') if origin.strip()]
 else:
-    CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:3001']
+    CORS_ALLOWED_ORIGINS = [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://148.230.81.69:4000',
+        'http://148.230.81.69:4001',
+        'https://legalflow.company',
+        'https://admin.legalflow.company',
+        'https://app.legalflow.company',
+        'http://legalflow.company',
+        'http://admin.legalflow.company',
+        'http://app.legalflow.company',
+    ]
 
-# Also allow origins with regex for Vercel preview deployments
+# Also allow origins with regex for subdomains
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
     r"^https://.*\.onrender\.com$",
+    r"^https://.*\.legalflow\.company$",
+    r"^http://.*\.legalflow\.company$",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -133,8 +146,18 @@ CORS_ALLOW_HEADERS = [
 
 # CSRF Trusted Origins
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:3000', 'http://localhost:3001', 'http://localhost:8000',
-    'https://*.onrender.com', 'https://*.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:8000',
+    'https://*.onrender.com',
+    'https://*.vercel.app',
+    'https://legalflow.company',
+    'https://*.legalflow.company',
+    'http://legalflow.company',
+    'http://*.legalflow.company',
+    'http://148.230.81.69:8000',
+    'http://148.230.81.69:4000',
+    'http://148.230.81.69:4001',
 ]
 
 # Rate Limiting
