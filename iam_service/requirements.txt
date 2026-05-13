@@ -23,3 +23,4 @@ cryptography>=41.0,<42.0
 
 # WSGI Server
 gunicorn>=21.2,<22.0
+django-prometheus>=2.3,<3.0

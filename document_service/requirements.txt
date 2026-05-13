@@ -36,3 +36,4 @@ python-dotenv>=1.0,<2.0
 
 # WSGI Server
 gunicorn>=21.2,<22.0
+django-prometheus>=2.3,<3.0

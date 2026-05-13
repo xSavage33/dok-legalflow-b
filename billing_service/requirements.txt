@@ -33,3 +33,4 @@ gunicorn>=21.2,<22.0
 
 # Payment Gateway - Stripe
 stripe>=7.4,<8.0
+django-prometheus>=2.3,<3.0
