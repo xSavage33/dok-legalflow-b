@@ -16,7 +16,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from django.utils import timezone
 
 # Modelos locales de autenticacion
-from .models import User, UserActivity
+from .models import User, UserActivity, UserDevice
 
 # Serializadores para validacion y transformacion de datos
 from .serializers import (
@@ -29,6 +29,9 @@ from .serializers import (
     UserCreateSerializer,
     UserAdminUpdateSerializer,
     UserActivitySerializer,
+    UserDeviceSerializer,
+    UserDeviceRegisterSerializer,
+    UserDeviceUpdateSerializer,
 )
 
 
@@ -445,3 +448,129 @@ class ValidateTokenView(APIView):
             'valid': True,
             'user': UserSerializer(request.user).data
         })
+
+
+# =============================================================================
+# VISTAS DE GESTION DE DISPOSITIVOS (Push Notifications)
+# =============================================================================
+
+
+class DeviceRegisterView(APIView):
+    """
+    Vista para registrar dispositivos para push notifications.
+    POST /api/auth/devices/register/
+    Registra o actualiza el token FCM de un dispositivo.
+    """
+
+    def post(self, request):
+        """
+        Registra un dispositivo para recibir push notifications.
+
+        Parametros:
+            request: Solicitud HTTP con fcm_token, platform, device_name (opcional), device_id (opcional)
+
+        Retorna:
+            Response: Datos del dispositivo registrado
+        """
+        serializer = UserDeviceRegisterSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        device = serializer.save()
+
+        return Response({
+            'message': 'Dispositivo registrado exitosamente.',
+            'device': UserDeviceSerializer(device).data
+        }, status=status.HTTP_201_CREATED)
+
+
+class DeviceListView(generics.ListAPIView):
+    """
+    Vista para listar los dispositivos del usuario autenticado.
+    GET /api/auth/devices/
+    Muestra todos los dispositivos activos registrados.
+    """
+
+    serializer_class = UserDeviceSerializer
+
+    def get_queryset(self):
+        """
+        Obtiene los dispositivos del usuario actual.
+        Solo retorna dispositivos activos.
+        """
+        return UserDevice.objects.filter(
+            user=self.request.user,
+            is_active=True
+        ).order_by('-created_at')
+
+
+class DeviceDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Vista para ver, actualizar y eliminar dispositivos especificos.
+    GET /api/auth/devices/{id}/ - Obtiene datos de un dispositivo
+    PATCH /api/auth/devices/{id}/ - Actualiza un dispositivo
+    DELETE /api/auth/devices/{id}/ - Elimina un dispositivo
+    """
+
+    serializer_class = UserDeviceSerializer
+    lookup_field = 'id'
+
+    def get_queryset(self):
+        """
+        Filtra dispositivos por el usuario autenticado.
+        """
+        return UserDevice.objects.filter(user=self.request.user)
+
+    def get_serializer_class(self):
+        """
+        Selecciona el serializador segun el metodo HTTP.
+        """
+        if self.request.method in ['PUT', 'PATCH']:
+            return UserDeviceUpdateSerializer
+        return UserDeviceSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Elimina un dispositivo (hard delete).
+        """
+        device = self.get_object()
+        device.delete()
+        return Response({'message': 'Dispositivo eliminado exitosamente.'}, status=status.HTTP_204_NO_CONTENT)
+
+
+class DeviceUnregisterView(APIView):
+    """
+    Vista para desregistrar un dispositivo por su token FCM.
+    POST /api/auth/devices/unregister/
+    Util cuando el usuario cierra sesion desde un dispositivo.
+    """
+
+    # Permite acceso sin autenticacion (para casos de logout)
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        """
+        Desregistra un dispositivo usando su token FCM.
+
+        Parametros:
+            request: Solicitud HTTP con fcm_token
+
+        Retorna:
+            Response: Mensaje de confirmacion
+        """
+        fcm_token = request.data.get('fcm_token')
+
+        if not fcm_token:
+            return Response(
+                {'error': 'fcm_token es requerido.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Busca y elimina el dispositivo por token
+        deleted_count, _ = UserDevice.objects.filter(fcm_token=fcm_token).delete()
+
+        if deleted_count > 0:
+            return Response({'message': 'Dispositivo desregistrado exitosamente.'})
+        else:
+            return Response({'message': 'Dispositivo no encontrado.'}, status=status.HTTP_404_NOT_FOUND)

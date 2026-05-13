@@ -25,11 +25,13 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'drf_spectacular',
+    'django_prometheus',  # Monitoring with Prometheus
     # Local apps
     'gateway',
 ]
 
 MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',  # Prometheus - must be first
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -40,6 +42,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'gateway.middleware.RateLimitMiddleware',
+    'django_prometheus.middleware.PrometheusAfterMiddleware',  # Prometheus - must be last
 ]
 
 ROOT_URLCONF = 'api_gateway.urls'

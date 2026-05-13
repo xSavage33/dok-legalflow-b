@@ -330,3 +330,74 @@ class UserActivity(models.Model):
         Muestra el email del usuario, la accion y la fecha.
         """
         return f"{self.user.email} - {self.action} at {self.timestamp}"
+
+
+class UserDevice(models.Model):
+    """
+    Modelo para registrar dispositivos moviles de usuarios.
+    Permite enviar push notifications via Firebase Cloud Messaging (FCM).
+
+    Cada usuario puede tener multiples dispositivos registrados (telefono, tablet, web).
+    Los tokens FCM son unicos y se actualizan cuando el dispositivo renueva su token.
+    """
+
+    # Plataformas soportadas para push notifications
+    PLATFORM_CHOICES = [
+        ('ios', 'iOS'),
+        ('android', 'Android'),
+        ('web', 'Web'),
+    ]
+
+    # Identificador unico del registro
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    # Usuario propietario del dispositivo
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='devices'
+    )
+
+    # Token FCM del dispositivo (proporcionado por Firebase SDK en el cliente)
+    # Es unico porque un token solo puede pertenecer a un dispositivo
+    fcm_token = models.CharField(max_length=500, unique=True)
+
+    # Plataforma del dispositivo
+    platform = models.CharField(
+        max_length=10,
+        choices=PLATFORM_CHOICES
+    )
+
+    # Nombre o modelo del dispositivo (opcional, para identificacion)
+    device_name = models.CharField(max_length=100, blank=True)
+
+    # Identificador unico del dispositivo (device_id del cliente)
+    # Permite identificar el mismo dispositivo aunque cambie el token FCM
+    device_id = models.CharField(max_length=255, blank=True, db_index=True)
+
+    # Indica si el dispositivo esta activo para recibir notificaciones
+    is_active = models.BooleanField(default=True)
+
+    # Fecha de registro del dispositivo
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Ultima actualizacion (ej: cuando se actualiza el token FCM)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Ultima vez que se envio una notificacion exitosa
+    last_notified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        """Metadatos del modelo UserDevice."""
+        db_table = 'user_devices'
+        ordering = ['-created_at']
+        # Un usuario no puede tener el mismo device_id registrado multiples veces
+        unique_together = [['user', 'device_id']]
+
+    def __str__(self):
+        """Representacion en cadena del dispositivo."""
+        return f"{self.user.email} - {self.platform} ({self.device_name or 'Unknown'})"

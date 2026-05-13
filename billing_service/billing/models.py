@@ -685,3 +685,82 @@ class PaymentGatewayTransaction(models.Model):
             return payment
 
         return None
+
+    def process_refund(self, refund_amount=None, refund_reason=''):
+        """
+        Procesa un reembolso para esta transaccion.
+
+        Este metodo se llama cuando la pasarela notifica un reembolso.
+        Actualiza la transaccion, elimina/ajusta el pago asociado y
+        actualiza la factura para reflejar el reembolso.
+
+        Args:
+            refund_amount: Monto del reembolso (None = reembolso total)
+            refund_reason: Razon del reembolso
+
+        Returns:
+            dict: Informacion del reembolso procesado
+        """
+        from decimal import Decimal
+        import datetime
+
+        # Si no se especifica monto, es reembolso total
+        if refund_amount is None:
+            refund_amount = self.amount
+        else:
+            refund_amount = Decimal(str(refund_amount))
+
+        # Actualizar estado de la transaccion
+        if refund_amount >= self.amount:
+            self.status = 'refunded'
+        else:
+            # Reembolso parcial - mantener como completed pero registrar
+            pass
+
+        self.error_message = f"Reembolso: {refund_reason}" if refund_reason else "Reembolso procesado"
+        self.save()
+
+        # Buscar y eliminar el pago asociado si existe
+        if self.payment_id:
+            try:
+                payment = Payment.objects.get(id=self.payment_id)
+                invoice = payment.invoice
+
+                # Eliminar el pago
+                payment.delete()
+
+                # Recalcular totales de la factura
+                invoice.amount_paid = sum(p.amount for p in invoice.payments.all())
+                invoice.balance_due = invoice.total_amount - invoice.amount_paid
+
+                # Actualizar estado de la factura
+                if invoice.balance_due <= 0:
+                    invoice.status = 'paid'
+                elif invoice.amount_paid > 0:
+                    invoice.status = 'partial'
+                else:
+                    # Volver a estado 'sent' si no hay pagos
+                    invoice.status = 'sent'
+                    invoice.paid_date = None
+
+                invoice.save()
+
+                # Limpiar referencia al pago
+                self.payment_id = None
+                self.save()
+
+                return {
+                    'success': True,
+                    'refund_amount': float(refund_amount),
+                    'invoice_status': invoice.status,
+                    'balance_due': float(invoice.balance_due),
+                    'amount_paid': float(invoice.amount_paid)
+                }
+
+            except Payment.DoesNotExist:
+                pass
+
+        return {
+            'success': False,
+            'error': 'No se encontro el pago asociado'
+        }

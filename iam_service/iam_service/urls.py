@@ -11,4 +11,6 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     # Health check
     path('health/', include('iam_service.health_urls')),
+    # Prometheus metrics endpoint
+    path('', include('django_prometheus.urls')),
 ]

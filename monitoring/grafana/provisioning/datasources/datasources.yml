@@ -1,0 +1,22 @@
+# =============================================================================
+# GRAFANA DATASOURCES CONFIGURATION
+# =============================================================================
+# Configuracion automatica de datasources para Grafana.
+# Prometheus se configura como datasource principal.
+# =============================================================================
+
+apiVersion: 1
+
+datasources:
+  # ---------------------------------------------------------------------------
+  # Prometheus - Metricas de microservicios
+  # ---------------------------------------------------------------------------
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: POST

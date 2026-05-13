@@ -1,0 +1,171 @@
+# =============================================================================
+# ALERTAS DE PROMETHEUS - LegalFlow
+# =============================================================================
+# Reglas de alerta para monitorear la salud de los microservicios.
+#
+# Severidades:
+# - critical: Requiere atencion inmediata
+# - warning: Requiere atencion pronto
+# - info: Informativo
+# =============================================================================
+
+groups:
+  # ===========================================================================
+  # ALERTAS DE DISPONIBILIDAD DE SERVICIOS
+  # ===========================================================================
+  - name: service_availability
+    rules:
+      # -----------------------------------------------------------------------
+      # Servicio caido
+      # -----------------------------------------------------------------------
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Servicio {{ $labels.job }} esta caido"
+          description: "El servicio {{ $labels.job }} no responde en {{ $labels.instance }}. Ha estado caido por mas de 1 minuto."
+
+      # -----------------------------------------------------------------------
+      # Servicio con alta latencia
+      # -----------------------------------------------------------------------
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, sum(rate(django_http_requests_latency_seconds_bucket[5m])) by (le, job)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alta latencia en {{ $labels.job }}"
+          description: "El 95% de las requests en {{ $labels.job }} estan tomando mas de 2 segundos."
+
+  # ===========================================================================
+  # ALERTAS DE ERRORES HTTP
+  # ===========================================================================
+  - name: http_errors
+    rules:
+      # -----------------------------------------------------------------------
+      # Alta tasa de errores 5xx
+      # -----------------------------------------------------------------------
+      - alert: HighErrorRate5xx
+        expr: |
+          (
+            sum(rate(django_http_responses_total_by_status_total{status=~"5.."}[5m])) by (job)
+            /
+            sum(rate(django_http_responses_total_by_status_total[5m])) by (job)
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alta tasa de errores 5xx en {{ $labels.job }}"
+          description: "El servicio {{ $labels.job }} tiene mas del 5% de respuestas con error 500."
+
+      # -----------------------------------------------------------------------
+      # Alta tasa de errores 4xx
+      # -----------------------------------------------------------------------
+      - alert: HighErrorRate4xx
+        expr: |
+          (
+            sum(rate(django_http_responses_total_by_status_total{status=~"4.."}[5m])) by (job)
+            /
+            sum(rate(django_http_responses_total_by_status_total[5m])) by (job)
+          ) * 100 > 25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alta tasa de errores 4xx en {{ $labels.job }}"
+          description: "El servicio {{ $labels.job }} tiene mas del 25% de respuestas con error 4xx."
+
+  # ===========================================================================
+  # ALERTAS DE BASE DE DATOS
+  # ===========================================================================
+  - name: database_alerts
+    rules:
+      # -----------------------------------------------------------------------
+      # Muchas conexiones a la base de datos
+      # -----------------------------------------------------------------------
+      - alert: HighDatabaseConnections
+        expr: django_db_connections_total > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Muchas conexiones a BD en {{ $labels.job }}"
+          description: "El servicio {{ $labels.job }} tiene mas de 50 conexiones activas a la base de datos."
+
+      # -----------------------------------------------------------------------
+      # Queries lentos
+      # -----------------------------------------------------------------------
+      - alert: SlowDatabaseQueries
+        expr: histogram_quantile(0.95, sum(rate(django_db_query_duration_seconds_bucket[5m])) by (le, job)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queries lentos en {{ $labels.job }}"
+          description: "El 95% de los queries en {{ $labels.job }} estan tomando mas de 1 segundo."
+
+  # ===========================================================================
+  # ALERTAS DE RECURSOS
+  # ===========================================================================
+  - name: resource_alerts
+    rules:
+      # -----------------------------------------------------------------------
+      # Alto uso de memoria Python
+      # -----------------------------------------------------------------------
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 512
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alto uso de memoria en {{ $labels.job }}"
+          description: "El servicio {{ $labels.job }} esta usando mas de 512MB de memoria."
+
+      # -----------------------------------------------------------------------
+      # Muchas excepciones
+      # -----------------------------------------------------------------------
+      - alert: HighExceptionRate
+        expr: rate(django_http_exceptions_total_by_type_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alta tasa de excepciones en {{ $labels.job }}"
+          description: "El servicio {{ $labels.job }} esta generando muchas excepciones: {{ $labels.type }}"
+
+  # ===========================================================================
+  # ALERTAS DE NEGOCIO (LegalFlow)
+  # ===========================================================================
+  - name: business_alerts
+    rules:
+      # -----------------------------------------------------------------------
+      # Sin requests en el API Gateway
+      # -----------------------------------------------------------------------
+      - alert: NoTrafficApiGateway
+        expr: sum(rate(django_http_requests_total_by_method_total{job="api-gateway"}[10m])) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sin trafico en API Gateway"
+          description: "El API Gateway no ha recibido ninguna request en los ultimos 15 minutos."
+
+      # -----------------------------------------------------------------------
+      # Servicio de autenticacion con problemas
+      # -----------------------------------------------------------------------
+      - alert: AuthenticationServiceIssues
+        expr: |
+          (
+            sum(rate(django_http_responses_total_by_status_total{job="iam-service", status=~"5.."}[5m]))
+            /
+            sum(rate(django_http_responses_total_by_status_total{job="iam-service"}[5m]))
+          ) * 100 > 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Problemas en servicio de autenticacion"
+          description: "El IAM Service tiene mas del 1% de errores. Esto puede afectar el login de usuarios."

@@ -1,0 +1,19 @@
+# =============================================================================
+# GRAFANA DASHBOARDS PROVISIONING
+# =============================================================================
+# Configuracion para cargar dashboards automaticamente desde archivos JSON.
+# =============================================================================
+
+apiVersion: 1
+
+providers:
+  - name: 'LegalFlow Dashboards'
+    orgId: 1
+    folder: 'LegalFlow'
+    folderUid: 'legalflow'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

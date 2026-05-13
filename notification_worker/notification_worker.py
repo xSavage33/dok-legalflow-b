@@ -25,6 +25,9 @@ Zona horaria: America/Bogota (Colombia)
 # Modulo os: permite acceder a variables de entorno del sistema operativo
 import os
 
+# Modulo json: para parsear credenciales de Firebase desde variable de entorno
+import json
+
 # Modulo smtplib: proporciona funcionalidad para enviar correos via protocolo SMTP
 import smtplib
 
@@ -45,6 +48,15 @@ import requests
 
 # load_dotenv: carga variables de entorno desde un archivo .env
 from dotenv import load_dotenv
+
+# Firebase Admin SDK: para enviar push notifications via FCM
+try:
+    import firebase_admin
+    from firebase_admin import credentials, messaging
+    FIREBASE_AVAILABLE = True
+except ImportError:
+    FIREBASE_AVAILABLE = False
+    print("Firebase Admin SDK not installed. Push notifications disabled.")
 
 # ============================================================================
 # CARGA DE VARIABLES DE ENTORNO
@@ -130,6 +142,70 @@ PORTAL_SERVICE_URL = os.environ.get('PORTAL_SERVICE_URL', 'http://localhost:8007
 
 
 # ============================================================================
+# CONFIGURACION DE FIREBASE CLOUD MESSAGING (Push Notifications)
+# ============================================================================
+
+# Variable global para indicar si Firebase esta inicializado
+FIREBASE_INITIALIZED = False
+
+def initialize_firebase():
+    """
+    Inicializa Firebase Admin SDK para enviar push notifications.
+
+    Soporta dos metodos de configuracion:
+    1. FIREBASE_CREDENTIALS_JSON: JSON de credenciales en variable de entorno (recomendado para produccion)
+    2. FIREBASE_CREDENTIALS_FILE: Ruta a archivo de credenciales JSON (para desarrollo local)
+
+    Retorna:
+        bool: True si la inicializacion fue exitosa, False en caso contrario
+    """
+    global FIREBASE_INITIALIZED
+
+    if not FIREBASE_AVAILABLE:
+        print("Firebase Admin SDK not available. Push notifications disabled.")
+        return False
+
+    if FIREBASE_INITIALIZED:
+        return True
+
+    try:
+        # Opcion 1: Credenciales desde variable de entorno (JSON string)
+        firebase_creds_json = os.environ.get('FIREBASE_CREDENTIALS_JSON')
+
+        # Opcion 2: Credenciales desde archivo
+        firebase_creds_file = os.environ.get('FIREBASE_CREDENTIALS_FILE')
+
+        if firebase_creds_json:
+            # Parsea el JSON de credenciales desde la variable de entorno
+            creds_dict = json.loads(firebase_creds_json)
+            cred = credentials.Certificate(creds_dict)
+            firebase_admin.initialize_app(cred)
+            FIREBASE_INITIALIZED = True
+            print("Firebase initialized from environment variable.")
+            return True
+
+        elif firebase_creds_file and os.path.exists(firebase_creds_file):
+            # Carga credenciales desde archivo JSON
+            cred = credentials.Certificate(firebase_creds_file)
+            firebase_admin.initialize_app(cred)
+            FIREBASE_INITIALIZED = True
+            print(f"Firebase initialized from file: {firebase_creds_file}")
+            return True
+
+        else:
+            print("Firebase credentials not configured. Push notifications disabled.")
+            return False
+
+    except Exception as e:
+        print(f"Error initializing Firebase: {str(e)}")
+        return False
+
+
+# Intenta inicializar Firebase al cargar el modulo
+initialize_firebase()
+
+
+# ============================================================================
 # FUNCIONES AUXILIARES
 # ============================================================================
 
@@ -205,12 +281,163 @@ def send_email(to_email, subject, body_html, body_text=None):
         return False
 
 
+def get_user_fcm_tokens(user_id):
+    """
+    Obtiene los tokens FCM de todos los dispositivos activos de un usuario.
+
+    Consulta al servicio IAM para obtener los tokens de dispositivos registrados.
+
+    Parametros:
+        user_id (str): UUID del usuario
+
+    Retorna:
+        list: Lista de tokens FCM activos del usuario
+    """
+    try:
+        response = requests.get(
+            f'{IAM_SERVICE_URL}/api/auth/users/{user_id}/devices/',
+            timeout=10
+        )
+        if response.status_code == 200:
+            devices = response.json()
+            return [d['fcm_token'] for d in devices if d.get('is_active', True)]
+    except Exception as e:
+        print(f"Error getting FCM tokens for user {user_id}: {str(e)}")
+    return []
+
+
+def send_push_notification(fcm_token, title, body, data=None):
+    """
+    Envia una push notification a un dispositivo especifico.
+
+    Parametros:
+        fcm_token (str): Token FCM del dispositivo destino
+        title (str): Titulo de la notificacion
+        body (str): Contenido de la notificacion
+        data (dict, opcional): Datos adicionales para la app
+
+    Retorna:
+        bool: True si el envio fue exitoso, False en caso contrario
+    """
+    if not FIREBASE_INITIALIZED or not FIREBASE_AVAILABLE:
+        print(f"Push notification skipped (Firebase not initialized): {title}")
+        return False
+
+    try:
+        # Construye el mensaje de FCM
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title=title,
+                body=body,
+            ),
+            data=data or {},
+            token=fcm_token,
+        )
+
+        # Envia el mensaje
+        response = messaging.send(message)
+        print(f"Push notification sent successfully: {response}")
+        return True
+
+    except messaging.UnregisteredError:
+        # Token invalido - el dispositivo ya no esta registrado
+        print(f"FCM token unregistered: {fcm_token[:20]}...")
+        # Aqui podriamos eliminar el token de la base de datos
+        return False
+
+    except Exception as e:
+        print(f"Error sending push notification: {str(e)}")
+        return False
+
+
+def send_push_to_user(user_id, title, body, data=None):
+    """
+    Envia push notifications a todos los dispositivos de un usuario.
+
+    Parametros:
+        user_id (str): UUID del usuario
+        title (str): Titulo de la notificacion
+        body (str): Contenido de la notificacion
+        data (dict, opcional): Datos adicionales para la app
+
+    Retorna:
+        int: Numero de notificaciones enviadas exitosamente
+    """
+    tokens = get_user_fcm_tokens(user_id)
+    success_count = 0
+
+    for token in tokens:
+        if send_push_notification(token, title, body, data):
+            success_count += 1
+
+    return success_count
+
+
+def send_push_to_multiple_users(user_ids, title, body, data=None):
+    """
+    Envia push notifications a multiples usuarios.
+
+    Parametros:
+        user_ids (list): Lista de UUIDs de usuarios
+        title (str): Titulo de la notificacion
+        body (str): Contenido de la notificacion
+        data (dict, opcional): Datos adicionales para la app
+
+    Retorna:
+        int: Numero total de notificaciones enviadas exitosamente
+    """
+    total_success = 0
+    for user_id in user_ids:
+        total_success += send_push_to_user(user_id, title, body, data)
+    return total_success
+
+
+# ============================================================================
+# TAREAS DE CELERY - PUSH NOTIFICATIONS
+# ============================================================================
+
+@app.task(name='send_push_notification_task')
+def send_push_notification_task(user_id, title, body, data=None):
+    """
+    Tarea Celery para enviar push notification a un usuario.
+
+    Parametros:
+        user_id (str): UUID del usuario
+        title (str): Titulo de la notificacion
+        body (str): Contenido de la notificacion
+        data (dict, opcional): Datos adicionales
+
+    Retorna:
+        dict: Resultado con el numero de notificaciones enviadas
+    """
+    success_count = send_push_to_user(user_id, title, body, data)
+    return {'user_id': user_id, 'notifications_sent': success_count}
+
+
+@app.task(name='send_push_to_multiple_task')
+def send_push_to_multiple_task(user_ids, title, body, data=None):
+    """
+    Tarea Celery para enviar push notifications a multiples usuarios.
+
+    Parametros:
+        user_ids (list): Lista de UUIDs de usuarios
+        title (str): Titulo de la notificacion
+        body (str): Contenido de la notificacion
+        data (dict, opcional): Datos adicionales
+
+    Retorna:
+        dict: Resultado con el total de notificaciones enviadas
+    """
+    total_success = send_push_to_multiple_users(user_ids, title, body, data)
+    return {'users_count': len(user_ids), 'notifications_sent': total_success}
+
+
 # ============================================================================
 # TAREAS DE CELERY - NOTIFICACIONES DE PLAZOS
 # ============================================================================
 
 @app.task(name='send_deadline_reminder')
-def send_deadline_reminder(deadline_id, user_email, deadline_title, due_date, case_number=''):
+def send_deadline_reminder(deadline_id, user_email, deadline_title, due_date, case_number='', user_id=None):
     """
     Envia un correo recordatorio sobre un plazo legal proximo a vencer.
 
@@ -223,9 +450,10 @@ def send_deadline_reminder(deadline_id, user_email, deadline_title, due_date, ca
         deadline_title (str): Titulo o descripcion del plazo
         due_date (str): Fecha de vencimiento del plazo
         case_number (str, opcional): Numero de radicado del caso asociado
+        user_id (str, opcional): UUID del usuario para push notifications
 
     Retorna:
-        bool: Resultado del envio del correo (True/False)
+        dict: Resultado del envio (email y push)
     """
     # Construye el asunto del correo con prefijo identificador de LegalFlow
     subject = f"[LegalFlow] Recordatorio de Plazo: {deadline_title}"
@@ -260,8 +488,23 @@ def send_deadline_reminder(deadline_id, user_email, deadline_title, due_date, ca
     Por favor, tome las acciones necesarias.
     """
 
-    # Invoca la funcion de envio de correo y retorna su resultado
-    return send_email(user_email, subject, body_html, body_text)
+    # Envia el correo electronico
+    email_sent = send_email(user_email, subject, body_html, body_text)
+
+    # Envia push notification si se proporciono user_id
+    push_sent = 0
+    if user_id:
+        push_body = f"Plazo: {deadline_title}\nVence: {due_date}"
+        if case_number:
+            push_body += f"\nCaso: {case_number}"
+        push_sent = send_push_to_user(
+            user_id,
+            "Recordatorio de Plazo",
+            push_body,
+            {'type': 'deadline_reminder', 'deadline_id': str(deadline_id)}
+        )
+
+    return {'email_sent': email_sent, 'push_notifications_sent': push_sent}
 
 
 # ============================================================================
@@ -269,7 +512,7 @@ def send_deadline_reminder(deadline_id, user_email, deadline_title, due_date, ca
 # ============================================================================
 
 @app.task(name='send_invoice_notification')
-def send_invoice_notification(invoice_number, client_email, client_name, total_amount, due_date, action='created'):
+def send_invoice_notification(invoice_number, client_email, client_name, total_amount, due_date, action='created', client_user_id=None, invoice_id=None, balance_due=None):
     """
     Envia una notificacion por correo relacionada con una factura.
 
@@ -283,9 +526,12 @@ def send_invoice_notification(invoice_number, client_email, client_name, total_a
         total_amount (float): Monto total de la factura
         due_date (str): Fecha de vencimiento de la factura
         action (str): Tipo de accion ('created', 'sent', 'overdue', 'paid')
+        client_user_id (str, opcional): UUID del cliente para push notifications
+        invoice_id (str, opcional): UUID de la factura para generar link de pago
+        balance_due (float, opcional): Saldo pendiente de la factura
 
     Retorna:
-        bool: Resultado del envio del correo (True/False)
+        dict: Resultado del envio (email y push)
     """
     # Diccionario que mapea codigos de accion a textos legibles en espanol
     actions = {
@@ -301,26 +547,86 @@ def send_invoice_notification(invoice_number, client_email, client_name, total_a
     # Construye el asunto del correo con el tipo de accion y numero de factura
     subject = f"[LegalFlow] {action_text}: {invoice_number}"
 
+    # URL del portal de clientes para el link de pago
+    client_portal_url = os.environ.get('CLIENT_PORTAL_URL', 'http://localhost:5174')
+
+    # Genera el boton de pago solo si hay saldo pendiente y no esta pagada
+    payment_button_html = ''
+    if action in ['sent', 'overdue'] and balance_due and balance_due > 0:
+        payment_button_html = f"""
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{client_portal_url}/invoices?pay={invoice_id}"
+               style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                Pagar Ahora - ${balance_due:,.0f}
+            </a>
+        </div>
+        """
+
+    # Mensaje especifico segun la accion
+    message_html = ''
+    if action == 'sent':
+        message_html = '<p>Por favor, realice el pago antes de la fecha de vencimiento.</p>'
+    elif action == 'overdue':
+        message_html = '<p style="color: #dc2626;"><strong>IMPORTANTE:</strong> Esta factura se encuentra vencida. Por favor, realice el pago lo antes posible para evitar recargos.</p>'
+    elif action == 'paid':
+        message_html = '<p style="color: #16a34a;"><strong>¡Gracias por su pago!</strong> Su factura ha sido pagada en su totalidad.</p>'
+
     # Construye el cuerpo del correo en HTML con los detalles de la factura
     body_html = f"""
     <html>
-    <body>
-        <h2>{action_text}</h2>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h2 style="color: #1e40af; margin: 0;">{action_text}</h2>
+        </div>
+
         <p>Estimado/a {client_name},</p>
         <p>Le informamos sobre su factura:</p>
-        <ul>
-            <li><strong>Numero de factura:</strong> {invoice_number}</li>
-            <li><strong>Monto total:</strong> ${total_amount}</li>
-            <li><strong>Fecha de vencimiento:</strong> {due_date}</li>
-        </ul>
-        <hr>
-        <p><small>Este es un mensaje automatico de LegalFlow.</small></p>
+
+        <div style="background-color: #f1f5f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">Numero de factura:</td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">{invoice_number}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">Monto total:</td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">${total_amount:,.0f}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">Fecha de vencimiento:</td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0; text-align: right;">{due_date}</td>
+                </tr>
+                {f'<tr><td style="padding: 8px 0;"><strong>Saldo pendiente:</strong></td><td style="padding: 8px 0; text-align: right; font-weight: bold; color: #dc2626;">${balance_due:,.0f}</td></tr>' if balance_due and balance_due > 0 else ''}
+            </table>
+        </div>
+
+        {message_html}
+        {payment_button_html}
+
+        <p>Tambien puede acceder al portal de clientes para ver y pagar sus facturas:</p>
+        <p><a href="{client_portal_url}/invoices" style="color: #2563eb;">Ver mis facturas</a></p>
+
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
+        <p style="color: #64748b; font-size: 12px;">Este es un mensaje automatico de LegalFlow. Por favor no responda a este correo.</p>
     </body>
     </html>
     """
 
-    # Envia el correo (sin version texto plano en este caso)
-    return send_email(client_email, subject, body_html)
+    # Envia el correo electronico
+    email_sent = send_email(client_email, subject, body_html)
+
+    # Envia push notification si se proporciono client_user_id
+    push_sent = 0
+    if client_user_id:
+        push_body = f"Factura: {invoice_number}\nMonto: ${total_amount:,.0f}\nVence: {due_date}"
+        push_sent = send_push_to_user(
+            client_user_id,
+            action_text,
+            push_body,
+            {'type': 'invoice_notification', 'action': action, 'invoice_number': invoice_number, 'invoice_id': str(invoice_id) if invoice_id else None}
+        )
+
+    return {'email_sent': email_sent, 'push_notifications_sent': push_sent}
 
 
 # ============================================================================
@@ -328,7 +634,7 @@ def send_invoice_notification(invoice_number, client_email, client_name, total_a
 # ============================================================================
 
 @app.task(name='send_case_update')
-def send_case_update(case_number, client_email, client_name, update_type, update_message):
+def send_case_update(case_number, client_email, client_name, update_type, update_message, client_user_id=None):
     """
     Envia una notificacion de actualizacion sobre un caso legal.
 
@@ -341,9 +647,10 @@ def send_case_update(case_number, client_email, client_name, update_type, update
         client_name (str): Nombre del cliente
         update_type (str): Tipo de actualizacion (ej: 'Estado', 'Documento')
         update_message (str): Descripcion detallada de la actualizacion
+        client_user_id (str, opcional): UUID del cliente para push notifications
 
     Retorna:
-        bool: Resultado del envio del correo (True/False)
+        dict: Resultado del envio (email y push)
     """
     # Construye el asunto del correo con el numero de caso
     subject = f"[LegalFlow] Actualizacion de Caso: {case_number}"
@@ -362,8 +669,21 @@ def send_case_update(case_number, client_email, client_name, update_type, update
     </html>
     """
 
-    # Envia la notificacion al cliente
-    return send_email(client_email, subject, body_html)
+    # Envia el correo electronico
+    email_sent = send_email(client_email, subject, body_html)
+
+    # Envia push notification si se proporciono client_user_id
+    push_sent = 0
+    if client_user_id:
+        push_body = f"Caso: {case_number}\n{update_type}: {update_message}"
+        push_sent = send_push_to_user(
+            client_user_id,
+            "Actualizacion de Caso",
+            push_body,
+            {'type': 'case_update', 'case_number': case_number, 'update_type': update_type}
+        )
+
+    return {'email_sent': email_sent, 'push_notifications_sent': push_sent}
 
 
 @app.task(name='process_event_case_closed')
@@ -522,7 +842,7 @@ def check_overdue_invoices():
 # ============================================================================
 
 @app.task(name='send_message_notification')
-def send_message_notification(recipient_email, recipient_name, sender_name, subject, case_number=''):
+def send_message_notification(recipient_email, recipient_name, sender_name, subject, case_number='', recipient_user_id=None):
     """
     Envia una notificacion cuando se recibe un nuevo mensaje en el sistema.
 
@@ -535,9 +855,10 @@ def send_message_notification(recipient_email, recipient_name, sender_name, subj
         sender_name (str): Nombre de quien envia el mensaje
         subject (str): Asunto del mensaje recibido
         case_number (str, opcional): Numero de caso relacionado
+        recipient_user_id (str, opcional): UUID del destinatario para push notifications
 
     Retorna:
-        bool: Resultado del envio del correo (True/False)
+        dict: Resultado del envio (email y push)
     """
     # Construye el asunto del correo de notificacion
     email_subject = f"[LegalFlow] Nuevo mensaje de {sender_name}"
@@ -573,8 +894,23 @@ def send_message_notification(recipient_email, recipient_name, sender_name, subj
     Ingrese a LegalFlow para ver el mensaje completo.
     """
 
-    # Envia la notificacion con ambas versiones (HTML y texto)
-    return send_email(recipient_email, email_subject, body_html, body_text)
+    # Envia el correo electronico
+    email_sent = send_email(recipient_email, email_subject, body_html, body_text)
+
+    # Envia push notification si se proporciono recipient_user_id
+    push_sent = 0
+    if recipient_user_id:
+        push_body = f"De: {sender_name}\nAsunto: {subject}"
+        if case_number:
+            push_body += f"\nCaso: {case_number}"
+        push_sent = send_push_to_user(
+            recipient_user_id,
+            "Nuevo Mensaje",
+            push_body,
+            {'type': 'message_notification', 'sender': sender_name}
+        )
+
+    return {'email_sent': email_sent, 'push_notifications_sent': push_sent}
 
 
 # ============================================================================
@@ -630,7 +966,7 @@ def send_document_shared_notification(recipient_email, recipient_name, document_
 # ============================================================================
 
 @app.task(name='send_event_reminder')
-def send_event_reminder(event_id, user_email, event_title, event_datetime, location='', case_number=''):
+def send_event_reminder(event_id, user_email, event_title, event_datetime, location='', case_number='', user_id=None):
     """
     Envia un correo recordatorio sobre un evento proximo.
 
@@ -644,9 +980,10 @@ def send_event_reminder(event_id, user_email, event_title, event_datetime, locat
         event_datetime (str): Fecha y hora del evento
         location (str, opcional): Ubicacion donde se realizara el evento
         case_number (str, opcional): Numero de caso relacionado
+        user_id (str, opcional): UUID del usuario para push notifications
 
     Retorna:
-        bool: Resultado del envio del correo (True/False)
+        dict: Resultado del envio (email y push)
     """
     # Construye el asunto del correo con el titulo del evento
     subject = f"[LegalFlow] Recordatorio de Evento: {event_title}"
@@ -680,8 +1017,23 @@ def send_event_reminder(event_id, user_email, event_title, event_datetime, locat
     {'Caso: ' + case_number if case_number else ''}
     """
 
-    # Envia el recordatorio con ambas versiones del contenido
-    return send_email(user_email, subject, body_html, body_text)
+    # Envia el correo electronico
+    email_sent = send_email(user_email, subject, body_html, body_text)
+
+    # Envia push notification si se proporciono user_id
+    push_sent = 0
+    if user_id:
+        push_body = f"{event_title}\nFecha: {event_datetime}"
+        if location:
+            push_body += f"\nUbicacion: {location}"
+        push_sent = send_push_to_user(
+            user_id,
+            "Recordatorio de Evento",
+            push_body,
+            {'type': 'event_reminder', 'event_id': str(event_id)}
+        )
+
+    return {'email_sent': email_sent, 'push_notifications_sent': push_sent}
 
 
 # ============================================================================

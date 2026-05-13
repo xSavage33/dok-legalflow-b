@@ -1,6 +1,6 @@
 services:
   # ==================== DATABASES ====================
-  db_iam:
+  db-iam:
     image: postgres:15-alpine
     container_name: legalflow_db_iam
     environment:
@@ -19,7 +19,7 @@ services:
     networks:
       - legalflow_network
 
-  db_matter:
+  db-matter:
     image: postgres:15-alpine
     container_name: legalflow_db_matter
     environment:
@@ -38,7 +38,7 @@ services:
     networks:
       - legalflow_network
 
-  db_document:
+  db-document:
     image: postgres:15-alpine
     container_name: legalflow_db_document
     environment:
@@ -57,7 +57,7 @@ services:
     networks:
       - legalflow_network
 
-  db_time:
+  db-time:
     image: postgres:15-alpine
     container_name: legalflow_db_time
     environment:
@@ -76,7 +76,7 @@ services:
     networks:
       - legalflow_network
 
-  db_billing:
+  db-billing:
     image: postgres:15-alpine
     container_name: legalflow_db_billing
     environment:
@@ -95,7 +95,7 @@ services:
     networks:
       - legalflow_network
 
-  db_calendar:
+  db-calendar:
     image: postgres:15-alpine
     container_name: legalflow_db_calendar
     environment:
@@ -114,7 +114,7 @@ services:
     networks:
       - legalflow_network
 
-  db_portal:
+  db-portal:
     image: postgres:15-alpine
     container_name: legalflow_db_portal
     environment:
@@ -133,7 +133,7 @@ services:
     networks:
       - legalflow_network
 
-  db_analytics:
+  db-analytics:
     image: postgres:15-alpine
     container_name: legalflow_db_analytics
     environment:
@@ -169,7 +169,7 @@ services:
       - legalflow_network
 
   # ==================== MICROSERVICES ====================
-  api_gateway:
+  api-gateway:
     build:
       context: ./api_gateway
       dockerfile: Dockerfile
@@ -180,14 +180,14 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - IAM_SERVICE_URL=http://iam_service:8001
-      - MATTER_SERVICE_URL=http://matter_service:8002
-      - DOCUMENT_SERVICE_URL=http://document_service:8003
-      - TIME_SERVICE_URL=http://time_tracking_service:8004
-      - BILLING_SERVICE_URL=http://billing_service:8005
-      - CALENDAR_SERVICE_URL=http://calendar_service:8006
-      - PORTAL_SERVICE_URL=http://client_portal_service:8007
-      - ANALYTICS_SERVICE_URL=http://analytics_service:8008
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - MATTER_SERVICE_URL=http://matter-service:8002
+      - DOCUMENT_SERVICE_URL=http://document-service:8003
+      - TIME_SERVICE_URL=http://time-service:8004
+      - BILLING_SERVICE_URL=http://billing-service:8005
+      - CALENDAR_SERVICE_URL=http://calendar-service:8006
+      - PORTAL_SERVICE_URL=http://portal-service:8007
+      - ANALYTICS_SERVICE_URL=http://analytics-service:8008
       - REDIS_URL=redis://redis:6379/0
       - ALLOWED_HOSTS=*
     depends_on:
@@ -196,7 +196,7 @@ services:
     networks:
       - legalflow_network
 
-  iam_service:
+  iam-service:
     build:
       context: ./iam_service
       dockerfile: Dockerfile
@@ -207,18 +207,18 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=postgres://${IAM_DB_USER:-iam_user}:${IAM_DB_PASSWORD:-iam_password}@db_iam:5432/${IAM_DB_NAME:-iam_db}
+      - DATABASE_URL=postgres://${IAM_DB_USER:-iam_user}:${IAM_DB_PASSWORD:-iam_password}@db-iam:5432/${IAM_DB_NAME:-iam_db}
       - REDIS_URL=redis://redis:6379/1
       - ALLOWED_HOSTS=*
     depends_on:
-      db_iam:
+      db-iam:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks:
       - legalflow_network
 
-  matter_service:
+  matter-service:
     build:
       context: ./matter_service
       dockerfile: Dockerfile
@@ -229,21 +229,21 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=postgres://${MATTER_DB_USER:-matter_user}:${MATTER_DB_PASSWORD:-matter_password}@db_matter:5432/${MATTER_DB_NAME:-matter_db}
-      - IAM_SERVICE_URL=http://iam_service:8001
+      - DATABASE_URL=postgres://${MATTER_DB_USER:-matter_user}:${MATTER_DB_PASSWORD:-matter_password}@db-matter:5432/${MATTER_DB_NAME:-matter_db}
+      - IAM_SERVICE_URL=http://iam-service:8001
       - REDIS_URL=redis://redis:6379/2
       - ALLOWED_HOSTS=*
     depends_on:
-      db_matter:
+      db-matter:
         condition: service_healthy
       redis:
         condition: service_healthy
-      iam_service:
+      iam-service:
         condition: service_started
     networks:
       - legalflow_network
 
-  document_service:
+  document-service:
     build:
       context: ./document_service
       dockerfile: Dockerfile
@@ -254,23 +254,23 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=postgres://${DOCUMENT_DB_USER:-document_user}:${DOCUMENT_DB_PASSWORD:-document_password}@db_document:5432/${DOCUMENT_DB_NAME:-document_db}
-      - IAM_SERVICE_URL=http://iam_service:8001
+      - DATABASE_URL=postgres://${DOCUMENT_DB_USER:-document_user}:${DOCUMENT_DB_PASSWORD:-document_password}@db-document:5432/${DOCUMENT_DB_NAME:-document_db}
+      - IAM_SERVICE_URL=http://iam-service:8001
       - REDIS_URL=redis://redis:6379/3
       - ALLOWED_HOSTS=*
     volumes:
       - document_files:/app/media
     depends_on:
-      db_document:
+      db-document:
         condition: service_healthy
       redis:
         condition: service_healthy
-      iam_service:
+      iam-service:
         condition: service_started
     networks:
       - legalflow_network
 
-  time_tracking_service:
+  time-service:
     build:
       context: ./time_tracking_service
       dockerfile: Dockerfile
@@ -281,21 +281,21 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=postgres://${TIME_DB_USER:-time_user}:${TIME_DB_PASSWORD:-time_password}@db_time:5432/${TIME_DB_NAME:-time_db}
-      - IAM_SERVICE_URL=http://iam_service:8001
+      - DATABASE_URL=postgres://${TIME_DB_USER:-time_user}:${TIME_DB_PASSWORD:-time_password}@db-time:5432/${TIME_DB_NAME:-time_db}
+      - IAM_SERVICE_URL=http://iam-service:8001
       - REDIS_URL=redis://redis:6379/4
       - ALLOWED_HOSTS=*
     depends_on:
-      db_time:
+      db-time:
         condition: service_healthy
       redis:
         condition: service_healthy
-      iam_service:
+      iam-service:
         condition: service_started
     networks:
       - legalflow_network
 
-  billing_service:
+  billing-service:
     build:
       context: ./billing_service
       dockerfile: Dockerfile
@@ -306,24 +306,34 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=postgres://${BILLING_DB_USER:-billing_user}:${BILLING_DB_PASSWORD:-billing_password}@db_billing:5432/${BILLING_DB_NAME:-billing_db}
-      - IAM_SERVICE_URL=http://iam_service:8001
-      - TIME_SERVICE_URL=http://time_tracking_service:8004
-      - PORTAL_SERVICE_URL=http://client_portal_service:8007
+      - DATABASE_URL=postgres://${BILLING_DB_USER:-billing_user}:${BILLING_DB_PASSWORD:-billing_password}@db-billing:5432/${BILLING_DB_NAME:-billing_db}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - TIME_SERVICE_URL=http://time-service:8004
+      - PORTAL_SERVICE_URL=http://portal-service:8007
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-legalflow-internal-service-token-2024}
       - REDIS_URL=redis://redis:6379/5
       - ALLOWED_HOSTS=*
+      - EMAIL_HOST=${EMAIL_HOST:-smtp.gmail.com}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL:-noreply@legalflow.com}
+      # Stripe Payment Gateway
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
     depends_on:
-      db_billing:
+      db-billing:
         condition: service_healthy
       redis:
         condition: service_healthy
-      iam_service:
+      iam-service:
         condition: service_started
     networks:
       - legalflow_network
 
-  calendar_service:
+  calendar-service:
     build:
       context: ./calendar_service
       dockerfile: Dockerfile
@@ -334,21 +344,21 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=postgres://${CALENDAR_DB_USER:-calendar_user}:${CALENDAR_DB_PASSWORD:-calendar_password}@db_calendar:5432/${CALENDAR_DB_NAME:-calendar_db}
-      - IAM_SERVICE_URL=http://iam_service:8001
+      - DATABASE_URL=postgres://${CALENDAR_DB_USER:-calendar_user}:${CALENDAR_DB_PASSWORD:-calendar_password}@db-calendar:5432/${CALENDAR_DB_NAME:-calendar_db}
+      - IAM_SERVICE_URL=http://iam-service:8001
       - REDIS_URL=redis://redis:6379/6
       - ALLOWED_HOSTS=*
     depends_on:
-      db_calendar:
+      db-calendar:
         condition: service_healthy
       redis:
         condition: service_healthy
-      iam_service:
+      iam-service:
         condition: service_started
     networks:
       - legalflow_network
 
-  client_portal_service:
+  portal-service:
     build:
       context: ./client_portal_service
       dockerfile: Dockerfile
@@ -359,25 +369,25 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=postgres://${PORTAL_DB_USER:-portal_user}:${PORTAL_DB_PASSWORD:-portal_password}@db_portal:5432/${PORTAL_DB_NAME:-portal_db}
-      - IAM_SERVICE_URL=http://iam_service:8001
-      - MATTER_SERVICE_URL=http://matter_service:8002
-      - DOCUMENT_SERVICE_URL=http://document_service:8003
-      - BILLING_SERVICE_URL=http://billing_service:8005
+      - DATABASE_URL=postgres://${PORTAL_DB_USER:-portal_user}:${PORTAL_DB_PASSWORD:-portal_password}@db-portal:5432/${PORTAL_DB_NAME:-portal_db}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - MATTER_SERVICE_URL=http://matter-service:8002
+      - DOCUMENT_SERVICE_URL=http://document-service:8003
+      - BILLING_SERVICE_URL=http://billing-service:8005
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-legalflow-internal-service-token-2024}
       - REDIS_URL=redis://redis:6379/7
       - ALLOWED_HOSTS=*
     depends_on:
-      db_portal:
+      db-portal:
         condition: service_healthy
       redis:
         condition: service_healthy
-      iam_service:
+      iam-service:
         condition: service_started
     networks:
       - legalflow_network
 
-  analytics_service:
+  analytics-service:
     build:
       context: ./analytics_service
       dockerfile: Dockerfile
@@ -388,26 +398,26 @@ services:
       - DEBUG=${DEBUG:-True}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=postgres://${ANALYTICS_DB_USER:-analytics_user}:${ANALYTICS_DB_PASSWORD:-analytics_password}@db_analytics:5432/${ANALYTICS_DB_NAME:-analytics_db}
-      - IAM_SERVICE_URL=http://iam_service:8001
-      - MATTER_SERVICE_URL=http://matter_service:8002
-      - TIME_SERVICE_URL=http://time_tracking_service:8004
-      - BILLING_SERVICE_URL=http://billing_service:8005
-      - CALENDAR_SERVICE_URL=http://calendar_service:8006
+      - DATABASE_URL=postgres://${ANALYTICS_DB_USER:-analytics_user}:${ANALYTICS_DB_PASSWORD:-analytics_password}@db-analytics:5432/${ANALYTICS_DB_NAME:-analytics_db}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - MATTER_SERVICE_URL=http://matter-service:8002
+      - TIME_SERVICE_URL=http://time-service:8004
+      - BILLING_SERVICE_URL=http://billing-service:8005
+      - CALENDAR_SERVICE_URL=http://calendar-service:8006
       - REDIS_URL=redis://redis:6379/8
       - ALLOWED_HOSTS=*
     depends_on:
-      db_analytics:
+      db-analytics:
         condition: service_healthy
       redis:
         condition: service_healthy
-      iam_service:
+      iam-service:
         condition: service_started
     networks:
       - legalflow_network
 
   # ==================== CELERY WORKER ====================
-  notification_worker:
+  notification-worker:
     build:
       context: ./notification_worker
       dockerfile: Dockerfile
@@ -417,17 +427,23 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - CELERY_BROKER_URL=redis://redis:6379/9
       - CELERY_RESULT_BACKEND=redis://redis:6379/9
-      - IAM_SERVICE_URL=http://iam_service:8001
-      - MATTER_SERVICE_URL=http://matter_service:8002
-      - CALENDAR_SERVICE_URL=http://calendar_service:8006
-      - BILLING_SERVICE_URL=http://billing_service:8005
-      - PORTAL_SERVICE_URL=http://client_portal_service:8007
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - MATTER_SERVICE_URL=http://matter-service:8002
+      - CALENDAR_SERVICE_URL=http://calendar-service:8006
+      - BILLING_SERVICE_URL=http://billing-service:8005
+      - PORTAL_SERVICE_URL=http://portal-service:8007
       - EMAIL_HOST=${EMAIL_HOST:-smtp.gmail.com}
       - EMAIL_PORT=${EMAIL_PORT:-587}
       - EMAIL_HOST_USER=${EMAIL_HOST_USER}
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
       - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}
       - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL:-noreply@legalflow.com}
+      # Firebase Cloud Messaging (Push Notifications)
+      - FIREBASE_CREDENTIALS_FILE=${FIREBASE_CREDENTIALS_FILE}
+      - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON}
+    volumes:
+      # Mount Firebase credentials file (optional, for local development)
+      - ${FIREBASE_CREDENTIALS_FILE:-./firebase-credentials.json}:/app/firebase-credentials.json:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -435,7 +451,7 @@ services:
       - legalflow_network
 
   # ==================== CELERY BEAT ====================
-  celery_beat:
+  celery-beat:
     build:
       context: ./notification_worker
       dockerfile: Dockerfile
@@ -449,8 +465,56 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      notification_worker:
+      notification-worker:
         condition: service_started
+    networks:
+      - legalflow_network
+
+  # ==================== MONITORING ====================
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: legalflow_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - legalflow_network
+
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: legalflow_grafana
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-legalflow2024}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3030
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - legalflow_network
 
@@ -465,6 +529,8 @@ volumes:
   db_analytics_data:
   redis_data:
   document_files:
+  prometheus_data:
+  grafana_data:
 
 networks:
   legalflow_network:

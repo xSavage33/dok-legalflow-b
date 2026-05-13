@@ -648,6 +648,10 @@ class StripePaymentView(APIView):
     Esta vista maneja la creacion de intentos de pago (PaymentIntents)
     en Stripe y el seguimiento de las transacciones.
 
+    Soporta dos flujos:
+    1. Stripe Elements (frontend): Solo envia amount, recibe client_secret
+    2. Pago directo: Envia payment_method_id para confirmar inmediatamente
+
     Metodos:
     - POST: Crea un nuevo intento de pago en Stripe
     """
@@ -661,8 +665,10 @@ class StripePaymentView(APIView):
             invoice_id: UUID de la factura a pagar
 
         Cuerpo de la solicitud:
-            - payment_method_id: ID del metodo de pago de Stripe (requerido)
             - amount: Monto a pagar (opcional, usa balance_due por defecto)
+            - payment_method_id: ID del metodo de pago de Stripe (opcional)
+              Si se proporciona, confirma el pago inmediatamente.
+              Si no, retorna client_secret para confirmar desde el frontend.
 
         Returns:
             Response: Resultado del intento de pago con client_secret
@@ -711,16 +717,50 @@ class StripePaymentView(APIView):
         payment_method_id = request.data.get('payment_method_id')
         amount = request.data.get('amount', invoice.balance_due)
 
-        # Validar que se proporcione el metodo de pago
-        if not payment_method_id:
-            return Response(
-                {'error': 'Se requiere payment_method_id'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         try:
-            # Crear el PaymentIntent en Stripe
-            # El monto se envia en centavos (multiplicar por 100)
+            # Flujo 1: Stripe Elements (sin payment_method_id)
+            # Crea PaymentIntent sin confirmar, retorna client_secret
+            if not payment_method_id:
+                payment_intent = stripe.PaymentIntent.create(
+                    amount=int(float(amount) * 100),  # En centavos
+                    currency=invoice.currency.lower(),
+                    metadata={
+                        'invoice_id': str(invoice.id),
+                        'invoice_number': invoice.invoice_number,
+                        'client_id': str(invoice.client_id),
+                    },
+                    automatic_payment_methods={
+                        'enabled': True,
+                    }
+                )
+
+                # Crear registro de transaccion en la base de datos
+                transaction = PaymentGatewayTransaction.objects.create(
+                    invoice=invoice,
+                    gateway='stripe',
+                    gateway_transaction_id=payment_intent.id,
+                    amount=amount,
+                    currency=invoice.currency,
+                    status='pending',
+                    payment_method_type='card',
+                    gateway_response={
+                        'payment_intent_id': payment_intent.id,
+                        'status': payment_intent.status,
+                    },
+                    client_ip=self._get_client_ip(request),
+                )
+
+                # Retornar el client_secret para que el frontend confirme el pago
+                return Response({
+                    'client_secret': payment_intent.client_secret,
+                    'transaction_id': str(transaction.id),
+                    'payment_intent_id': payment_intent.id,
+                    'amount': float(amount),
+                    'currency': invoice.currency,
+                }, status=status.HTTP_200_OK)
+
+            # Flujo 2: Pago directo (con payment_method_id)
+            # Crear el PaymentIntent y confirmar inmediatamente
             payment_intent = stripe.PaymentIntent.create(
                 amount=int(float(amount) * 100),
                 currency=invoice.currency.lower(),
@@ -815,6 +855,85 @@ class StripePaymentView(APIView):
         if x_forwarded_for:
             return x_forwarded_for.split(',')[0]
         return request.META.get('REMOTE_ADDR')
+
+
+class StripeConfirmPaymentView(APIView):
+    """
+    Vista para confirmar un pago de Stripe despues de que el frontend
+    procesa exitosamente el PaymentIntent con Stripe Elements.
+
+    Esta vista se llama desde el frontend cuando stripe.confirmPayment()
+    retorna status='succeeded'. Actualiza la transaccion y crea el
+    registro de pago en la base de datos.
+
+    Metodos:
+    - POST: Confirma el pago y actualiza la factura
+    """
+
+    def post(self, request, invoice_id):
+        """
+        Confirma un pago exitoso de Stripe.
+
+        Args:
+            request: Objeto de solicitud HTTP
+            invoice_id: UUID de la factura
+
+        Cuerpo de la solicitud:
+            - payment_intent_id: ID del PaymentIntent de Stripe
+
+        Returns:
+            Response: Confirmacion del pago registrado
+        """
+        from .models import PaymentGatewayTransaction
+
+        payment_intent_id = request.data.get('payment_intent_id')
+
+        if not payment_intent_id:
+            return Response(
+                {'error': 'Se requiere payment_intent_id'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Buscar la transaccion por el payment_intent_id
+            transaction = PaymentGatewayTransaction.objects.get(
+                gateway='stripe',
+                gateway_transaction_id=payment_intent_id,
+                invoice_id=invoice_id
+            )
+
+            # Si ya esta completada, retornar exito
+            if transaction.status == 'completed':
+                return Response({
+                    'success': True,
+                    'message': 'El pago ya fue registrado',
+                    'transaction_id': str(transaction.id),
+                    'payment_id': str(transaction.payment_id) if transaction.payment_id else None
+                }, status=status.HTTP_200_OK)
+
+            # Completar el pago
+            payment = transaction.complete_payment()
+
+            return Response({
+                'success': True,
+                'message': 'Pago registrado exitosamente',
+                'transaction_id': str(transaction.id),
+                'payment_id': str(payment.id) if payment else None,
+                'invoice_status': transaction.invoice.status,
+                'balance_due': float(transaction.invoice.balance_due),
+                'amount_paid': float(transaction.invoice.amount_paid)
+            }, status=status.HTTP_200_OK)
+
+        except PaymentGatewayTransaction.DoesNotExist:
+            return Response(
+                {'error': 'Transaccion no encontrada'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class PayPalPaymentView(APIView):
@@ -1207,6 +1326,44 @@ class PaymentGatewayWebhookView(APIView):
                     transaction.status = 'failed'
                     transaction.error_message = data_object.get('last_payment_error', {}).get('message', '')
                     transaction.error_code = data_object.get('last_payment_error', {}).get('code', '')
+                    transaction.gateway_response = data_object
+                    transaction.save()
+                except PaymentGatewayTransaction.DoesNotExist:
+                    pass
+
+            elif event_type == 'charge.refunded':
+                # Reembolso procesado
+                payment_intent_id = data_object.get('payment_intent')
+                refund_amount = data_object.get('amount_refunded', 0) / 100  # Convertir de centavos
+                refunds_data = data_object.get('refunds', {}).get('data', [])
+                refund_reason = refunds_data[0].get('reason', '') if refunds_data else ''
+
+                if payment_intent_id:
+                    try:
+                        transaction = PaymentGatewayTransaction.objects.get(
+                            gateway='stripe',
+                            gateway_transaction_id=payment_intent_id
+                        )
+                        # Procesar el reembolso
+                        transaction.process_refund(
+                            refund_amount=refund_amount,
+                            refund_reason=refund_reason or 'Reembolso desde Stripe'
+                        )
+                        # Actualizar respuesta de la pasarela
+                        transaction.gateway_response = data_object
+                        transaction.save()
+                    except PaymentGatewayTransaction.DoesNotExist:
+                        pass
+
+            elif event_type == 'payment_intent.canceled':
+                # Pago cancelado
+                payment_intent_id = data_object.get('id')
+                try:
+                    transaction = PaymentGatewayTransaction.objects.get(
+                        gateway='stripe',
+                        gateway_transaction_id=payment_intent_id
+                    )
+                    transaction.status = 'cancelled'
                     transaction.gateway_response = data_object
                     transaction.save()
                 except PaymentGatewayTransaction.DoesNotExist:

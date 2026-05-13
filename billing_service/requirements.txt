@@ -30,3 +30,6 @@ requests>=2.31,<3.0
 
 # WSGI Server
 gunicorn>=21.2,<22.0
+
+# Payment Gateway - Stripe
+stripe>=7.4,<8.0

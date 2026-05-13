@@ -22,10 +22,12 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'drf_spectacular',
+    'django_prometheus',  # Monitoring with Prometheus
     'calendar_app',
 ]
 
 MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',  # Prometheus - must be first
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -35,6 +37,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django_prometheus.middleware.PrometheusAfterMiddleware',  # Prometheus - must be last
 ]
 
 ROOT_URLCONF = 'calendar_service.urls'

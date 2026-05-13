@@ -208,6 +208,16 @@ urlpatterns = [
         name='stripe_payment'
     ),
 
+    # Endpoint para confirmar pago de Stripe desde el frontend
+    # POST: Registra el pago exitoso despues de stripe.confirmPayment()
+    # Requiere: payment_intent_id en el body
+    # Ejemplo: POST /api/billing/invoices/uuid/pay/stripe/confirm/
+    path(
+        'invoices/<uuid:invoice_id>/pay/stripe/confirm/',
+        views.StripeConfirmPaymentView.as_view(),
+        name='stripe_confirm_payment'
+    ),
+
     # Endpoint para crear orden de pago en PayPal
     # POST: Crea una orden de pago en PayPal
     # Retorna: checkout_url para redirigir al usuario

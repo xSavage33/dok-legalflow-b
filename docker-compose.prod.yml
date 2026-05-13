@@ -1,0 +1,490 @@
+# =============================================================================
+# LEGALFLOW BACKEND - DOCKER COMPOSE PRODUCCION (DOKPLOY)
+# =============================================================================
+
+services:
+  # ==================== DATABASES ====================
+  db-iam:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${IAM_DB_NAME}
+      POSTGRES_USER: ${IAM_DB_USER}
+      POSTGRES_PASSWORD: ${IAM_DB_PASSWORD}
+    volumes:
+      - db_iam_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${IAM_DB_USER} -d ${IAM_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  db-matter:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MATTER_DB_NAME}
+      POSTGRES_USER: ${MATTER_DB_USER}
+      POSTGRES_PASSWORD: ${MATTER_DB_PASSWORD}
+    volumes:
+      - db_matter_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MATTER_DB_USER} -d ${MATTER_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  db-document:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DOCUMENT_DB_NAME}
+      POSTGRES_USER: ${DOCUMENT_DB_USER}
+      POSTGRES_PASSWORD: ${DOCUMENT_DB_PASSWORD}
+    volumes:
+      - db_document_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DOCUMENT_DB_USER} -d ${DOCUMENT_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  db-time:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TIME_DB_NAME}
+      POSTGRES_USER: ${TIME_DB_USER}
+      POSTGRES_PASSWORD: ${TIME_DB_PASSWORD}
+    volumes:
+      - db_time_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIME_DB_USER} -d ${TIME_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  db-billing:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${BILLING_DB_NAME}
+      POSTGRES_USER: ${BILLING_DB_USER}
+      POSTGRES_PASSWORD: ${BILLING_DB_PASSWORD}
+    volumes:
+      - db_billing_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BILLING_DB_USER} -d ${BILLING_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  db-calendar:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${CALENDAR_DB_NAME}
+      POSTGRES_USER: ${CALENDAR_DB_USER}
+      POSTGRES_PASSWORD: ${CALENDAR_DB_PASSWORD}
+    volumes:
+      - db_calendar_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CALENDAR_DB_USER} -d ${CALENDAR_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  db-portal:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PORTAL_DB_NAME}
+      POSTGRES_USER: ${PORTAL_DB_USER}
+      POSTGRES_PASSWORD: ${PORTAL_DB_PASSWORD}
+    volumes:
+      - db_portal_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PORTAL_DB_USER} -d ${PORTAL_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  db-analytics:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ANALYTICS_DB_NAME}
+      POSTGRES_USER: ${ANALYTICS_DB_USER}
+      POSTGRES_PASSWORD: ${ANALYTICS_DB_PASSWORD}
+    volumes:
+      - db_analytics_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ANALYTICS_DB_USER} -d ${ANALYTICS_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  # ==================== REDIS ====================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalflow_internal
+
+  # ==================== API GATEWAY ====================
+  api-gateway:
+    build:
+      context: ./api_gateway
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - MATTER_SERVICE_URL=http://matter-service:8002
+      - DOCUMENT_SERVICE_URL=http://document-service:8003
+      - TIME_SERVICE_URL=http://time-service:8004
+      - BILLING_SERVICE_URL=http://billing-service:8005
+      - CALENDAR_SERVICE_URL=http://calendar-service:8006
+      - PORTAL_SERVICE_URL=http://portal-service:8007
+      - ANALYTICS_SERVICE_URL=http://analytics-service:8008
+      - REDIS_URL=redis://redis:6379/0
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - legalflow_internal
+
+  # ==================== MICROSERVICES ====================
+  iam-service:
+    build:
+      context: ./iam_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgres://${IAM_DB_USER}:${IAM_DB_PASSWORD}@db-iam:5432/${IAM_DB_NAME}
+      - REDIS_URL=redis://redis:6379/1
+      - ALLOWED_HOSTS=*
+    depends_on:
+      db-iam:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - legalflow_internal
+
+  matter-service:
+    build:
+      context: ./matter_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgres://${MATTER_DB_USER}:${MATTER_DB_PASSWORD}@db-matter:5432/${MATTER_DB_NAME}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - REDIS_URL=redis://redis:6379/2
+      - ALLOWED_HOSTS=*
+    depends_on:
+      db-matter:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      iam-service:
+        condition: service_started
+    networks:
+      - legalflow_internal
+
+  document-service:
+    build:
+      context: ./document_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgres://${DOCUMENT_DB_USER}:${DOCUMENT_DB_PASSWORD}@db-document:5432/${DOCUMENT_DB_NAME}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - REDIS_URL=redis://redis:6379/3
+      - ALLOWED_HOSTS=*
+    volumes:
+      - document_files:/app/media
+    depends_on:
+      db-document:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      iam-service:
+        condition: service_started
+    networks:
+      - legalflow_internal
+
+  time-service:
+    build:
+      context: ./time_tracking_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgres://${TIME_DB_USER}:${TIME_DB_PASSWORD}@db-time:5432/${TIME_DB_NAME}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - REDIS_URL=redis://redis:6379/4
+      - ALLOWED_HOSTS=*
+    depends_on:
+      db-time:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      iam-service:
+        condition: service_started
+    networks:
+      - legalflow_internal
+
+  billing-service:
+    build:
+      context: ./billing_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgres://${BILLING_DB_USER}:${BILLING_DB_PASSWORD}@db-billing:5432/${BILLING_DB_NAME}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - TIME_SERVICE_URL=http://time-service:8004
+      - PORTAL_SERVICE_URL=http://portal-service:8007
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - REDIS_URL=redis://redis:6379/5
+      - ALLOWED_HOSTS=*
+      - EMAIL_HOST=${EMAIL_HOST:-smtp.gmail.com}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - EMAIL_USE_TLS=True
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL:-noreply@legalflow.com}
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+    depends_on:
+      db-billing:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      iam-service:
+        condition: service_started
+    networks:
+      - legalflow_internal
+
+  calendar-service:
+    build:
+      context: ./calendar_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgres://${CALENDAR_DB_USER}:${CALENDAR_DB_PASSWORD}@db-calendar:5432/${CALENDAR_DB_NAME}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - REDIS_URL=redis://redis:6379/6
+      - ALLOWED_HOSTS=*
+    depends_on:
+      db-calendar:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      iam-service:
+        condition: service_started
+    networks:
+      - legalflow_internal
+
+  portal-service:
+    build:
+      context: ./client_portal_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgres://${PORTAL_DB_USER}:${PORTAL_DB_PASSWORD}@db-portal:5432/${PORTAL_DB_NAME}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - MATTER_SERVICE_URL=http://matter-service:8002
+      - DOCUMENT_SERVICE_URL=http://document-service:8003
+      - BILLING_SERVICE_URL=http://billing-service:8005
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - REDIS_URL=redis://redis:6379/7
+      - ALLOWED_HOSTS=*
+    depends_on:
+      db-portal:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      iam-service:
+        condition: service_started
+    networks:
+      - legalflow_internal
+
+  analytics-service:
+    build:
+      context: ./analytics_service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgres://${ANALYTICS_DB_USER}:${ANALYTICS_DB_PASSWORD}@db-analytics:5432/${ANALYTICS_DB_NAME}
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - MATTER_SERVICE_URL=http://matter-service:8002
+      - TIME_SERVICE_URL=http://time-service:8004
+      - BILLING_SERVICE_URL=http://billing-service:8005
+      - CALENDAR_SERVICE_URL=http://calendar-service:8006
+      - REDIS_URL=redis://redis:6379/8
+      - ALLOWED_HOSTS=*
+    depends_on:
+      db-analytics:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      iam-service:
+        condition: service_started
+    networks:
+      - legalflow_internal
+
+  # ==================== WORKERS ====================
+  notification-worker:
+    build:
+      context: ./notification_worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/9
+      - CELERY_RESULT_BACKEND=redis://redis:6379/9
+      - IAM_SERVICE_URL=http://iam-service:8001
+      - MATTER_SERVICE_URL=http://matter-service:8002
+      - CALENDAR_SERVICE_URL=http://calendar-service:8006
+      - BILLING_SERVICE_URL=http://billing-service:8005
+      - PORTAL_SERVICE_URL=http://portal-service:8007
+      - EMAIL_HOST=${EMAIL_HOST:-smtp.gmail.com}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - EMAIL_USE_TLS=True
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL:-noreply@legalflow.com}
+      - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - legalflow_internal
+
+  celery-beat:
+    build:
+      context: ./notification_worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A notification_worker beat -l info
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/9
+      - CELERY_RESULT_BACKEND=redis://redis:6379/9
+    depends_on:
+      redis:
+        condition: service_healthy
+      notification-worker:
+        condition: service_started
+    networks:
+      - legalflow_internal
+
+  # ==================== MONITORING ====================
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    networks:
+      - legalflow_internal
+
+  grafana:
+    image: grafana/grafana:10.4.1
+    restart: unless-stopped
+    ports:
+      - "4002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - legalflow_internal
+
+volumes:
+  db_iam_data:
+  db_matter_data:
+  db_document_data:
+  db_time_data:
+  db_billing_data:
+  db_calendar_data:
+  db_portal_data:
+  db_analytics_data:
+  redis_data:
+  document_files:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  legalflow_internal:
+    driver: bridge

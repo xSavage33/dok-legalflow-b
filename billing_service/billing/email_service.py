@@ -173,6 +173,19 @@ PAYMENT_INFO_TEMPLATE = """
 </div>
 """
 
+# Template para boton de pago online
+ONLINE_PAYMENT_BUTTON_TEMPLATE = """
+<div style="text-align: center; margin: 25px 0;">
+    <p style="margin-bottom: 15px; font-size: 1.1em;"><strong>Pague en linea de forma rapida y segura:</strong></p>
+    <a href="{payment_url}"
+       style="display: inline-block; background-color: #2563eb; color: white; padding: 14px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 1.1em; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        Pagar Ahora - {balance_due}
+    </a>
+    <p style="margin-top: 10px; font-size: 0.9em; color: #718096;">Pagos seguros procesados por Stripe</p>
+</div>
+<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+"""
+
 
 def format_currency(amount, currency='COP') -> str:
     """
@@ -196,7 +209,8 @@ def send_invoice_email(
     recipient_emails: Optional[List[str]] = None,
     cc_emails: Optional[List[str]] = None,
     custom_message: Optional[str] = None,
-    include_payment_info: bool = True
+    include_payment_info: bool = True,
+    include_online_payment: bool = True
 ) -> dict:
     """
     Envia una factura por email con el PDF adjunto.
@@ -206,11 +220,14 @@ def send_invoice_email(
         recipient_emails: Lista de emails destinatarios (opcional, usa client_email si no se especifica)
         cc_emails: Lista de emails en copia (opcional)
         custom_message: Mensaje personalizado adicional (opcional)
-        include_payment_info: Incluir informacion de pago (default: True)
+        include_payment_info: Incluir informacion de pago bancario (default: True)
+        include_online_payment: Incluir boton de pago online (default: True)
 
     Returns:
         dict: Resultado del envio con status y mensaje
     """
+    import os
+
     try:
         # Determinar destinatarios
         if not recipient_emails:
@@ -237,10 +254,22 @@ def send_invoice_email(
             </div>
             '''
 
-        # Incluir informacion de pago si la factura no esta pagada
+        # Incluir boton de pago online si la factura tiene saldo pendiente
+        online_payment_button = ''
+        if include_online_payment and invoice.status not in ['paid', 'cancelled'] and invoice.balance_due > 0:
+            # URL del portal de clientes
+            client_portal_url = os.environ.get('CLIENT_PORTAL_URL', 'http://localhost:5174')
+            payment_url = f"{client_portal_url}/invoices?pay={invoice.id}"
+            balance_formatted = format_currency(invoice.balance_due, invoice.currency)
+            online_payment_button = ONLINE_PAYMENT_BUTTON_TEMPLATE.format(
+                payment_url=payment_url,
+                balance_due=balance_formatted
+            )
+
+        # Incluir informacion de pago bancario si la factura no esta pagada
         payment_info = ''
         if include_payment_info and invoice.status not in ['paid', 'cancelled']:
-            payment_info = PAYMENT_INFO_TEMPLATE
+            payment_info = online_payment_button + PAYMENT_INFO_TEMPLATE
 
         # Construir contenido HTML del email
         html_content = INVOICE_EMAIL_TEMPLATE.format(

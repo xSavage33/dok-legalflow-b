@@ -1,7 +1,10 @@
 #!/bin/bash
 set -e
 
-echo "Running migrations..."
+echo "Generating migrations..."
+python manage.py makemigrations --noinput
+
+echo "Applying migrations..."
 python manage.py migrate --noinput
 
 echo "Starting server..."

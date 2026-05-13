@@ -1,0 +1,140 @@
+# =============================================================================
+# PROMETHEUS CONFIGURATION - LegalFlow Microservices
+# =============================================================================
+# Este archivo configura Prometheus para recolectar metricas de todos los
+# microservicios de LegalFlow.
+#
+# Metricas recolectadas:
+# - HTTP requests (count, latency, status codes)
+# - Database connections and queries
+# - Python/Django internals (GC, threads, memory)
+# - Custom business metrics
+# =============================================================================
+
+global:
+  # Intervalo de scraping por defecto (cada 15 segundos)
+  scrape_interval: 15s
+  # Intervalo de evaluacion de reglas
+  evaluation_interval: 15s
+  # Labels externos para identificar este Prometheus
+  external_labels:
+    monitor: 'legalflow-monitor'
+    environment: 'development'
+
+# Reglas de alertas
+rule_files:
+  - '/etc/prometheus/alerts/*.yml'
+
+# Configuracion de Alertmanager (opcional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - alertmanager:9093
+
+# =============================================================================
+# SCRAPE CONFIGS - Endpoints de metricas
+# =============================================================================
+scrape_configs:
+  # -------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # -------------------------------------------------------------------------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+
+  # -------------------------------------------------------------------------
+  # API Gateway - Puerto 8000
+  # -------------------------------------------------------------------------
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8000']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # IAM Service - Puerto 8001
+  # -------------------------------------------------------------------------
+  - job_name: 'iam-service'
+    static_configs:
+      - targets: ['iam-service:8001']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # Matter Service - Puerto 8002
+  # -------------------------------------------------------------------------
+  - job_name: 'matter-service'
+    static_configs:
+      - targets: ['matter-service:8002']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # Document Service - Puerto 8003
+  # -------------------------------------------------------------------------
+  - job_name: 'document-service'
+    static_configs:
+      - targets: ['document-service:8003']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # Time Tracking Service - Puerto 8004
+  # -------------------------------------------------------------------------
+  - job_name: 'time-service'
+    static_configs:
+      - targets: ['time-service:8004']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # Billing Service - Puerto 8005
+  # -------------------------------------------------------------------------
+  - job_name: 'billing-service'
+    static_configs:
+      - targets: ['billing-service:8005']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # Calendar Service - Puerto 8006
+  # -------------------------------------------------------------------------
+  - job_name: 'calendar-service'
+    static_configs:
+      - targets: ['calendar-service:8006']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # Client Portal Service - Puerto 8007
+  # -------------------------------------------------------------------------
+  - job_name: 'portal-service'
+    static_configs:
+      - targets: ['portal-service:8007']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # Analytics Service - Puerto 8008
+  # -------------------------------------------------------------------------
+  - job_name: 'analytics-service'
+    static_configs:
+      - targets: ['analytics-service:8008']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # -------------------------------------------------------------------------
+  # Redis Exporter (opcional, si se agrega redis_exporter)
+  # -------------------------------------------------------------------------
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL Exporter (opcional, si se agrega postgres_exporter)
+  # -------------------------------------------------------------------------
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']

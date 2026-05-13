@@ -38,10 +38,11 @@ from django.contrib.auth.password_validation import validate_password
 # Esta funcion verifica las credenciales del usuario contra la base de datos
 from django.contrib.auth import authenticate
 
-# Importacion de los modelos User y UserActivity definidos en el modulo de autenticacion
+# Importacion de los modelos User, UserActivity y UserDevice definidos en el modulo de autenticacion
 # User: Modelo personalizado de usuario que extiende AbstractUser
 # UserActivity: Modelo para registrar la actividad/auditoria de los usuarios
-from .models import User, UserActivity
+# UserDevice: Modelo para registrar dispositivos moviles para push notifications
+from .models import User, UserActivity, UserDevice
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -549,3 +550,133 @@ class UserActivitySerializer(serializers.ModelSerializer):
 
         # Campos incluidos en la serializacion de actividad
         fields = ['id', 'action', 'ip_address', 'timestamp', 'details']
+
+
+# =============================================================================
+# SERIALIZADORES PARA DISPOSITIVOS MOVILES (Push Notifications)
+# =============================================================================
+
+class UserDeviceSerializer(serializers.ModelSerializer):
+    """
+    Serializador para visualizar dispositivos del usuario.
+
+    Este serializador se utiliza para mostrar la lista de dispositivos
+    registrados de un usuario, excluyendo el token FCM por seguridad.
+
+    Campos:
+        - id: Identificador unico del dispositivo
+        - platform: Plataforma (ios, android, web)
+        - device_name: Nombre del dispositivo
+        - device_id: Identificador del dispositivo
+        - is_active: Estado de activacion
+        - created_at: Fecha de registro
+        - last_notified_at: Ultima notificacion enviada
+    """
+
+    class Meta:
+        model = UserDevice
+        fields = [
+            'id', 'platform', 'device_name', 'device_id',
+            'is_active', 'created_at', 'last_notified_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'last_notified_at']
+
+
+class UserDeviceRegisterSerializer(serializers.ModelSerializer):
+    """
+    Serializador para registrar un nuevo dispositivo.
+
+    Permite registrar un dispositivo movil para recibir push notifications.
+    Si el dispositivo ya existe (por device_id), actualiza el token FCM.
+
+    Campos:
+        - fcm_token: Token de Firebase Cloud Messaging (requerido)
+        - platform: Plataforma del dispositivo (requerido)
+        - device_name: Nombre del dispositivo (opcional)
+        - device_id: Identificador unico del dispositivo (opcional)
+    """
+
+    class Meta:
+        model = UserDevice
+        fields = ['fcm_token', 'platform', 'device_name', 'device_id']
+
+    def validate_fcm_token(self, value):
+        """
+        Valida que el token FCM tenga un formato valido.
+        Los tokens FCM tipicamente tienen mas de 100 caracteres.
+        """
+        if not value or len(value) < 50:
+            raise serializers.ValidationError('Token FCM invalido o muy corto.')
+        return value
+
+    def validate_platform(self, value):
+        """
+        Valida que la plataforma sea una de las soportadas.
+        """
+        valid_platforms = ['ios', 'android', 'web']
+        if value not in valid_platforms:
+            raise serializers.ValidationError(
+                f'Plataforma debe ser una de: {", ".join(valid_platforms)}'
+            )
+        return value
+
+    def create(self, validated_data):
+        """
+        Crea o actualiza el registro del dispositivo.
+
+        Si el device_id ya existe para el usuario, actualiza el token FCM.
+        Si el fcm_token ya existe, lo reasigna al usuario actual.
+        """
+        user = self.context['request'].user
+        device_id = validated_data.get('device_id', '')
+
+        # Si hay device_id, buscar dispositivo existente para actualizar
+        if device_id:
+            existing_device = UserDevice.objects.filter(
+                user=user,
+                device_id=device_id
+            ).first()
+
+            if existing_device:
+                # Actualizar token FCM existente
+                existing_device.fcm_token = validated_data['fcm_token']
+                existing_device.platform = validated_data['platform']
+                existing_device.device_name = validated_data.get('device_name', '')
+                existing_device.is_active = True
+                existing_device.save()
+                return existing_device
+
+        # Si el token FCM ya existe (puede ser otro dispositivo), actualizarlo
+        existing_token = UserDevice.objects.filter(
+            fcm_token=validated_data['fcm_token']
+        ).first()
+
+        if existing_token:
+            # El token pertenece a otro usuario o dispositivo, actualizarlo
+            existing_token.user = user
+            existing_token.platform = validated_data['platform']
+            existing_token.device_name = validated_data.get('device_name', '')
+            existing_token.device_id = device_id
+            existing_token.is_active = True
+            existing_token.save()
+            return existing_token
+
+        # Crear nuevo dispositivo
+        validated_data['user'] = user
+        return super().create(validated_data)
+
+
+class UserDeviceUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializador para actualizar configuracion de un dispositivo.
+
+    Permite activar/desactivar notificaciones y actualizar el nombre.
+
+    Campos:
+        - is_active: Estado de activacion de notificaciones
+        - device_name: Nombre del dispositivo
+    """
+
+    class Meta:
+        model = UserDevice
+        fields = ['is_active', 'device_name']

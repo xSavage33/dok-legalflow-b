@@ -155,6 +155,7 @@ class InvoiceListSerializer(serializers.ModelSerializer):
             'status',          # Codigo de estado
             'status_display',  # Nombre legible del estado
             'total_amount',    # Monto total de la factura
+            'amount_paid',     # Monto ya pagado
             'balance_due',     # Saldo pendiente por pagar
             'issue_date',      # Fecha de emision
             'due_date',        # Fecha de vencimiento

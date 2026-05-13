@@ -13,6 +13,12 @@ urlpatterns = [
     path('password/change/', views.PasswordChangeView.as_view(), name='password_change'),
     path('activities/', views.UserActivityListView.as_view(), name='user_activities'),
 
+    # Device management endpoints (Push Notifications)
+    path('devices/', views.DeviceListView.as_view(), name='device_list'),
+    path('devices/register/', views.DeviceRegisterView.as_view(), name='device_register'),
+    path('devices/unregister/', views.DeviceUnregisterView.as_view(), name='device_unregister'),
+    path('devices/<uuid:id>/', views.DeviceDetailView.as_view(), name='device_detail'),
+
     # Admin endpoints
     path('users/', views.UserListView.as_view(), name='user_list'),
     path('users/<uuid:id>/', views.UserDetailView.as_view(), name='user_detail'),
