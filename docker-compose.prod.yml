@@ -190,6 +190,7 @@ services:
       context: ./iam_service
       dockerfile: Dockerfile
     restart: unless-stopped
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8001 --workers 2"
     environment:
       - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
@@ -210,6 +211,7 @@ services:
       context: ./matter_service
       dockerfile: Dockerfile
     restart: unless-stopped
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8002 --workers 2"
     environment:
       - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
@@ -233,6 +235,7 @@ services:
       context: ./document_service
       dockerfile: Dockerfile
     restart: unless-stopped
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8003 --workers 2"
     environment:
       - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
@@ -258,6 +261,7 @@ services:
       context: ./time_tracking_service
       dockerfile: Dockerfile
     restart: unless-stopped
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8004 --workers 2"
     environment:
       - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
@@ -281,6 +285,7 @@ services:
       context: ./billing_service
       dockerfile: Dockerfile
     restart: unless-stopped
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8005 --workers 2"
     environment:
       - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
@@ -316,6 +321,7 @@ services:
       context: ./calendar_service
       dockerfile: Dockerfile
     restart: unless-stopped
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8006 --workers 2"
     environment:
       - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
@@ -339,6 +345,7 @@ services:
       context: ./client_portal_service
       dockerfile: Dockerfile
     restart: unless-stopped
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8007 --workers 2"
     environment:
       - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
@@ -366,6 +373,7 @@ services:
       context: ./analytics_service
       dockerfile: Dockerfile
     restart: unless-stopped
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8008 --workers 2"
     environment:
       - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
