@@ -22,6 +22,7 @@ urlpatterns = [
     # Admin endpoints
     path('users/', views.UserListView.as_view(), name='user_list'),
     path('users/<uuid:id>/', views.UserDetailView.as_view(), name='user_detail'),
+    path('users/<uuid:id>/devices/', views.UserDevicesView.as_view(), name='user_devices'),
 
     # Service-to-service endpoint
     path('validate/', views.ValidateTokenView.as_view(), name='validate_token'),

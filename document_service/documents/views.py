@@ -73,6 +73,9 @@ from .serializers import (
     ShareDocumentSerializer,     # Serializador para compartir documento
 )
 
+# Importacion del modulo de notificaciones
+from .notifications import send_document_shared_notification
+
 
 def get_client_ip(request):
     """
@@ -729,6 +732,15 @@ class DocumentShareView(generics.ListCreateAPIView):
                 'permission': serializer.validated_data['permission']
             }
         )
+
+        # Enviar notificacion por email si es una nueva comparticion
+        if created:
+            send_document_shared_notification(
+                document=document,
+                shared_with_email=serializer.validated_data['shared_with_email'],
+                shared_with_name=serializer.validated_data.get('shared_with_name', ''),
+                permission=serializer.validated_data['permission']
+            )
 
         # Devolver respuesta con codigo apropiado
         # 201 si se creo, 200 si se actualizo

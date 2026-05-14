@@ -574,3 +574,25 @@ class DeviceUnregisterView(APIView):
             return Response({'message': 'Dispositivo desregistrado exitosamente.'})
         else:
             return Response({'message': 'Dispositivo no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class UserDevicesView(generics.ListAPIView):
+    """
+    Vista para obtener los dispositivos de un usuario especifico.
+    GET /api/auth/users/{id}/devices/
+    Usado por el notification_worker para obtener tokens FCM de un usuario.
+    Este endpoint es para uso interno (service-to-service).
+    """
+
+    serializer_class = UserDeviceSerializer
+    permission_classes = [permissions.AllowAny]  # Service-to-service, validar con API key en produccion
+
+    def get_queryset(self):
+        """
+        Obtiene los dispositivos activos del usuario especificado.
+        """
+        user_id = self.kwargs.get('id')
+        return UserDevice.objects.filter(
+            user_id=user_id,
+            is_active=True
+        ).order_by('-created_at')

@@ -61,6 +61,12 @@ from .serializers import (
 # Importacion del filtro personalizado para casos
 from .filters import CaseFilter
 
+# Importacion del modulo de notificaciones
+from .notifications import (
+    send_case_created_notification,
+    send_case_status_changed_notification,
+)
+
 
 class CaseListCreateView(generics.ListCreateAPIView):
     """
@@ -157,6 +163,21 @@ class CaseListCreateView(generics.ListCreateAPIView):
         # Retornar el queryset filtrado
         return queryset
 
+    def perform_create(self, serializer):
+        """
+        Logica personalizada al crear un caso.
+
+        Guarda el caso y envia notificacion al cliente.
+
+        Args:
+            serializer: Serializador con datos validados
+        """
+        # Guardar el caso
+        case = serializer.save()
+
+        # Enviar notificacion al cliente
+        send_case_created_notification(case)
+
 
 class CaseDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -224,6 +245,25 @@ class CaseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
         # Retornar respuesta de exito con mensaje en espanol
         return Response({'message': 'Caso archivado exitosamente.'})
+
+    def perform_update(self, serializer):
+        """
+        Logica personalizada al actualizar un caso.
+
+        Detecta cambios de estado para enviar notificaciones al cliente.
+
+        Args:
+            serializer: Serializador con datos validados
+        """
+        # Obtener el estado anterior
+        old_status = self.get_object().status
+
+        # Guardar los cambios
+        case = serializer.save()
+
+        # Si el estado cambio, enviar notificacion
+        if old_status != case.status:
+            send_case_status_changed_notification(case, old_status, case.status)
 
 
 class CaseByNumberView(generics.RetrieveAPIView):
