@@ -258,7 +258,7 @@ def send_invoice_email(
         online_payment_button = ''
         if include_online_payment and invoice.status not in ['paid', 'cancelled'] and invoice.balance_due > 0:
             # URL del portal de clientes
-            client_portal_url = os.environ.get('CLIENT_PORTAL_URL', 'http://localhost:5174')
+            client_portal_url = os.environ.get('CLIENT_PORTAL_URL', 'https://app.legalflow.company')
             payment_url = f"{client_portal_url}/invoices?pay={invoice.id}"
             balance_formatted = format_currency(invoice.balance_due, invoice.currency)
             online_payment_button = ONLINE_PAYMENT_BUTTON_TEMPLATE.format(
