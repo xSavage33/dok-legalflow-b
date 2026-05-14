@@ -26,3 +26,7 @@ python-dotenv>=1.0,<2.0
 # WSGI Server
 gunicorn>=21.2,<22.0
 django-prometheus>=2.3,<3.0
+
+# Celery (para enviar notificaciones)
+celery>=5.3,<6.0
+redis>=5.0,<6.0
