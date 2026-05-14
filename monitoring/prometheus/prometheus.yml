@@ -19,7 +19,7 @@ global:
   # Labels externos para identificar este Prometheus
   external_labels:
     monitor: 'legalflow-monitor'
-    environment: 'development'
+    environment: 'production'
 
 # Reglas de alertas
 rule_files:
