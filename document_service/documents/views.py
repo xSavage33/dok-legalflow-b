@@ -74,7 +74,7 @@ from .serializers import (
 )
 
 # Importacion del modulo de notificaciones
-from .notifications import send_document_shared_notification
+from .notifications import send_document_shared_notification, send_new_document_notification
 
 
 def get_client_ip(request):
@@ -298,6 +298,10 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         except Exception as e:
             # No fallamos la creacion si la extraccion falla
             logger.warning(f"No se pudo extraer texto de documento {document.id}: {str(e)}")
+
+        # Enviar notificacion al cliente si el documento esta asociado a un caso
+        if document.case_id:
+            send_new_document_notification(document)
 
 
 class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
