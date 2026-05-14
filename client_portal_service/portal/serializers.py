@@ -176,12 +176,12 @@ class MessageCreateSerializer(serializers.ModelSerializer):
     los datos del remitente se asignan automaticamente desde el usuario autenticado.
 
     Campos requeridos del cliente:
-        - recipient_id: ID del destinatario del mensaje
-        - recipient_name: Nombre del destinatario
         - subject: Asunto del mensaje
         - content: Contenido del mensaje
 
     Campos opcionales:
+        - recipient_id: ID del destinatario (si no se proporciona, se asigna automaticamente)
+        - recipient_name: Nombre del destinatario (si no se proporciona, se asigna automaticamente)
         - case_id: ID del caso asociado al mensaje
         - case_number: Numero de referencia del caso
         - parent_message_id: ID del mensaje al que se responde
@@ -192,6 +192,10 @@ class MessageCreateSerializer(serializers.ModelSerializer):
         - sender_role: Se obtiene de request.user.role
         - status: Se establece como 'sent' por defecto del modelo
     """
+
+    # Hacer recipient_id y recipient_name opcionales para clientes
+    recipient_id = serializers.UUIDField(required=False, allow_null=True)
+    recipient_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         """
@@ -205,8 +209,8 @@ class MessageCreateSerializer(serializers.ModelSerializer):
         # Solo los campos que el cliente necesita proporcionar al crear un mensaje
         # Los campos del remitente se asignan automaticamente en el metodo create()
         fields = [
-            'recipient_id',        # UUID del usuario destinatario (requerido)
-            'recipient_name',      # Nombre del destinatario (requerido)
+            'recipient_id',        # UUID del usuario destinatario (opcional, se auto-asigna)
+            'recipient_name',      # Nombre del destinatario (opcional, se auto-asigna)
             'case_id',             # UUID del caso asociado (opcional)
             'case_number',         # Numero de referencia del caso (opcional)
             'subject',             # Asunto del mensaje (requerido)
@@ -222,36 +226,79 @@ class MessageCreateSerializer(serializers.ModelSerializer):
         para agregar automaticamente la informacion del remitente desde
         el usuario autenticado que hace la peticion.
 
+        Si no se proporciona recipient_id/recipient_name, intenta obtener
+        el abogado principal del caso o asigna un destinatario por defecto.
+
         Args:
             validated_data (dict): Diccionario con los datos validados del formulario
-                Contiene: recipient_id, recipient_name, subject, content,
-                y opcionalmente: case_id, case_number, parent_message_id
+                Contiene: subject, content,
+                y opcionalmente: recipient_id, recipient_name, case_id, case_number, parent_message_id
 
         Returns:
             Message: La nueva instancia del mensaje creada y guardada en la base de datos
-
-        Funcionamiento:
-            1. Obtiene el objeto request del contexto del serializador
-            2. Agrega sender_id, sender_name y sender_role de request.user
-            3. Llama al metodo create() de la clase padre para guardar el mensaje
         """
+        import requests
+        import uuid
+        from django.conf import settings
+
         # Obtener el objeto request del contexto del serializador
-        # El contexto es pasado automaticamente por las vistas genericas de DRF
         request = self.context.get('request')
 
         # Agregar el ID del usuario autenticado como remitente del mensaje
         validated_data['sender_id'] = request.user.id
 
         # Agregar el email del usuario como nombre del remitente
-        # Se usa el email porque es un campo disponible en el usuario JWT
         validated_data['sender_name'] = request.user.email
 
         # Agregar el rol del usuario autenticado
-        # El rol indica si es cliente, abogado, administrador, etc.
         validated_data['sender_role'] = request.user.role
 
+        # Si no se proporciono recipient_id, intentar obtenerlo automaticamente
+        if not validated_data.get('recipient_id'):
+            recipient_id = None
+            recipient_name = 'Equipo Legal'
+
+            # Si hay un caso asociado, intentar obtener el abogado principal
+            case_id = validated_data.get('case_id')
+            if case_id:
+                try:
+                    headers = {
+                        'Authorization': request.META.get('HTTP_AUTHORIZATION', ''),
+                        'Host': 'localhost'
+                    }
+                    matter_url = getattr(settings, 'MATTER_SERVICE_URL', 'http://matter-service:8000')
+                    response = requests.get(
+                        f"{matter_url}/api/cases/{case_id}/",
+                        headers=headers,
+                        timeout=5
+                    )
+                    if response.status_code == 200:
+                        case_data = response.json()
+                        # Intentar obtener lead_attorney_id del caso
+                        lead_attorney_id = case_data.get('lead_attorney_id')
+                        lead_attorney_name = case_data.get('lead_attorney_name')
+                        if lead_attorney_id:
+                            recipient_id = lead_attorney_id
+                            recipient_name = lead_attorney_name or 'Abogado Principal'
+                except Exception as e:
+                    # Si falla, usar el destinatario por defecto
+                    print(f"Error obteniendo info del caso: {e}")
+
+            # Si aun no hay recipient_id, usar un ID de sistema por defecto
+            # UUID del sistema para mensajes sin destinatario especifico
+            if not recipient_id:
+                # Usar un UUID fijo para el "buzon general" del equipo legal
+                recipient_id = uuid.UUID('00000000-0000-0000-0000-000000000001')
+                recipient_name = 'Equipo Legal LegalFlow'
+
+            validated_data['recipient_id'] = recipient_id
+            validated_data['recipient_name'] = recipient_name
+
+        # Si hay recipient_id pero no recipient_name, asignar un nombre generico
+        elif not validated_data.get('recipient_name'):
+            validated_data['recipient_name'] = 'Destinatario'
+
         # Llamar al metodo create() de la clase padre (ModelSerializer)
-        # Este metodo crea la instancia del modelo y la guarda en la base de datos
         return super().create(validated_data)
 
 
