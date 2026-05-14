@@ -12,6 +12,7 @@ datasources:
   # Prometheus - Metricas de microservicios
   # ---------------------------------------------------------------------------
   - name: Prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090
